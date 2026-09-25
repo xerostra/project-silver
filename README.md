@@ -238,6 +238,27 @@ Raspberry Pi is plenty: ~15 MB of kills a day, one CPU core mostly idle) with
 WSL does, which usually means while a terminal is open. Back up `data/` regularly: the
 kill archive and history older than the API's ~4-month window exist nowhere else.
 
+## The eye (inventory from the screen)
+
+`uv sync --extra eye` once, then `uv run --extra eye python -m silver eye` reads the inventory off your
+screen and values it (`--every 5` keeps reading; pass a PNG path to read a screenshot instead).
+Open your bag in game, windowed or borderless: exclusive fullscreen can capture as black.
+
+It only ever looks at pixels, like a screen recorder: nothing reads the game's memory, files or
+network traffic, and nothing sends a key or a click. How it reads (`silver/eye.py`):
+
+- **Bag grid:** the largest set of same-size slot frames on one regular grid, so resolution, UI
+  scale and panel position need no setup. The skill bar is a grid too, but ten wide; a bag is four.
+- **Item:** correlation against every official render in `data/icons` (named by item id, so the
+  best match is the id). Renders are the tiles the game draws, so no model is needed.
+- **Tier:** the badge colour (learned from the renders), because enchanted resources use one tile
+  at every tier. **Enchant:** the lit diamonds under the art (one green = .1, two blue = .2).
+- **Numbers:** stack counts, the balances beside the coins, the load and the game's own
+  "Est. Market Value", by OCR (RapidOCR on the CPU). A full bag reads in about 1.5 s.
+
+Tested against two real 1080p captures in `tests/fixtures/`: every item, tier, enchant and count
+(`uv run --extra eye python -m unittest tests.test_eye`).
+
 ## Item icons
 
 Icons come from Albion's render service, which is slow (1 to 60 s for an image it hasn't

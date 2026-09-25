@@ -3,7 +3,8 @@
 python -m silver collect        -> collection only, for running 24/7 under a supervisor
 python -m silver scan           -> full market scan, best flips printed to the terminal
 python -m silver rebuild-kills  -> recompute the killboard and Meta counters from the raw archive
-python -m silver backup DIR     -> consistent copy of everything collected, safe while running"""
+python -m silver backup DIR     -> consistent copy of everything collected, safe while running
+python -m silver eye [IMAGE]    -> read the inventory off the screen (or a screenshot) and value it"""
 import argparse
 import shutil
 import signal
@@ -102,6 +103,49 @@ def cmd_backup(args):
     print(f"kill archive: {copied} new or grown files -> {dest / 'killboard'}")
 
 
+def cmd_eye(args):
+    try:
+        import cv2
+        from . import eye
+    except ImportError:
+        raise SystemExit("the eye needs its extra dependencies: uv sync --extra eye")
+    from . import icons, items
+    from .store import ALL
+    cache = icons.Icons()
+    todo = [i for i in items.names() if not cache.path(i) and not cache.missing(i)]
+    if todo:  # recognition compares against every render, so fetch the missing ones once
+        print(f"fetching {len(todo):,} item renders (once, a few minutes)…", flush=True)
+        cache.want(todo)
+        cache.join()
+    print("loading item renders…", flush=True)
+    refs, reader, store, names = eye.References(), eye.Reader(), Store(), items.names()
+    while True:
+        img = cv2.imread(args.image) if args.image else eye.capture()
+        if img is None:
+            raise SystemExit(f"can't read {args.image}")
+        snap = eye.read_inventory(img, refs, reader)
+        if snap is None:
+            print("no inventory on screen: open your bag (the game windowed or borderless)")
+        else:
+            fair = store.fair([i["id"] for i in snap.items])
+            total = 0
+            print(f"\n{'item':<44} {'count':>5} {'each':>10} {'value':>11}  match")
+            for i in snap.items:
+                each = fair.get(i["id"], {}).get(1, {}).get(ALL, {}).get("price")
+                value = each * i["count"] if each else None
+                total += value or 0
+                name = f"{names.get(i['id'], i['id'])} ({i['id']})"[:44]
+                print(f"{name:<44} {i['count']:>5} {each or '-':>10,} {value or '-':>11,}  {i['confidence']:.2f}"
+                      if each else f"{name:<44} {i['count']:>5} {'-':>10} {'-':>11}  {i['confidence']:.2f}")
+            print(f"{'fair value of the bag':<44} {'':>5} {'':>10} {total:>11,}")
+            if snap.market_value:
+                print(f"{'the game estimates':<44} {'':>5} {'':>10} {snap.market_value:>11,}")
+            print(f"balances {', '.join(f'{b:,}' for b in snap.balances) or '-'} · load {snap.weight}%")
+        if not args.every:
+            break
+        time.sleep(args.every)
+
+
 def main():
     parser = argparse.ArgumentParser(prog="silver", description="Albion Online market and PvP tools")
     parser.add_argument("--server", choices=sorted(config.SERVERS), default=config.SERVER,
@@ -116,6 +160,10 @@ def main():
     sub.add_parser("rebuild-kills", help="recompute the killboard and Meta counters from the raw kill archive")
     p = sub.add_parser("backup", help="copy the databases and kill archive somewhere safe (fine while running)")
     p.add_argument("dest", help="backup folder, e.g. /mnt/c/Users/you/silver-backup")
+
+    p = sub.add_parser("eye", help="read your inventory off the screen (or a screenshot) and value it")
+    p.add_argument("image", nargs="?", help="a screenshot to read instead of capturing the screen")
+    p.add_argument("--every", type=float, help="keep reading the screen every this many seconds")
 
     p = sub.add_parser("scan", help="scan the whole market and print the best flips")
     p.add_argument("--top", type=int, default=40)
@@ -139,6 +187,8 @@ def main():
             cmd_rebuild_kills(args)
         elif args.cmd == "backup":
             cmd_backup(args)
+        elif args.cmd == "eye":
+            cmd_eye(args)
         else:
             cmd_scan(args)
     except APIError as exc:

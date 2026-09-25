@@ -5,3 +5,10 @@ description = "Albion Online market data platform and dashboard"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["requests>=2.28"]
+
+[project.optional-dependencies]
+eye = [
+    "numpy>=2.2.6",
+    "opencv-python-headless>=5.0.0.93",
+    "rapidocr-onnxruntime>=1.4.4",
+]
