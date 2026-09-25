@@ -1,0 +1,21 @@
+# Run the collector 24/7 under systemd, restarting it if it ever stops.
+#   cp deploy/silver-collect.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now silver-collect
+#   loginctl enable-linger $USER      # keep it running when you are logged out
+#   journalctl --user -u silver-collect -f
+# Run `uv sync` in the project first: this uses its .venv directly, so nothing resolves at boot.
+# Edit WorkingDirectory to where the project lives, and add --server europe/americas if needed.
+[Unit]
+Description=Project Silver collector (Albion market data and kills)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=%h/project-silver
+ExecStart=%h/project-silver/.venv/bin/python -u -m silver collect
+Restart=always
+RestartSec=30
+TimeoutStopSec=60
+
+[Install]
+WantedBy=default.target

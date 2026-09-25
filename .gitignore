@@ -1,0 +1,6 @@
+# Downloaded game data, icons and everything collected: rebuildable or backed up with `silver backup`
+data/
+# uv environment
+.venv/
+__pycache__/
+*.pyc

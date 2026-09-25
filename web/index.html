@@ -1,0 +1,2186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Silver</title>
+<link rel="stylesheet" href="silver.css">
+</head>
+<body>
+<header>
+  <div class="brand">Project <span>Silver</span></div>
+  <div class="server" id="server"></div>
+  <div class="server" id="syncStatus" title="Background market sync"></div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="resources" aria-selected="true">Resources</button>
+    <button class="tab" role="tab" data-tab="market" aria-selected="false">Market</button>
+    <button class="tab" role="tab" data-tab="flips" aria-selected="false">Flips</button>
+    <button class="tab" role="tab" data-tab="craft" aria-selected="false">Craft &amp; Refine</button>
+    <button class="tab" role="tab" data-tab="enchant" aria-selected="false">Enchant</button>
+    <button class="tab" role="tab" data-tab="lookup" aria-selected="false">Lookup</button>
+    <button class="tab" role="tab" data-tab="hearts" aria-selected="false">Hearts</button>
+    <button class="tab" role="tab" data-tab="laborers" aria-selected="false">Laborers</button>
+    <button class="tab" role="tab" data-tab="farming" aria-selected="false">Farming</button>
+    <button class="tab" role="tab" data-tab="focus" aria-selected="false">Focus</button>
+    <button class="tab" role="tab" data-tab="gold" aria-selected="false">Gold</button>
+    <button class="tab" role="tab" data-tab="kills" aria-selected="false">Killboard</button>
+    <button class="tab" role="tab" data-tab="players" aria-selected="false">Players</button>
+    <button class="tab" role="tab" data-tab="meta" aria-selected="false">Meta</button>
+  </nav>
+  <div class="settings">
+    <label><input type="checkbox" id="premium"> Premium</label>
+    <label>Capital <input type="number" id="capital" min="0" step="100000"></label>
+    <label>Max price age
+      <select id="maxAge">
+        <option value="1">1h</option><option value="2">2h</option><option value="3">3h</option>
+        <option value="6">6h</option><option value="12">12h</option><option value="24">24h</option>
+      </select>
+    </label>
+  </div>
+</header>
+
+<main>
+  <!-- RESOURCES -->
+  <section id="view-resources">
+    <div class="toolbar">
+      <div class="chips" id="groupChips"></div>
+    </div>
+    <div class="toolbar">
+      <div class="chips" id="tierChips"></div>
+      <div class="chips" id="enchantChips"></div>
+      <span class="meta" id="resMeta"></span>
+      <button class="btn" id="resRefresh">Refresh</button>
+    </div>
+    <p class="hint">Top number: <b>buy now</b> (cheapest sell order). Bottom: <b>sell now</b> (best buy order). Prices older than the max age are struck through. Stale city? Open its market in-game with your data client running, then press Refresh.</p>
+    <div class="table-wrap"><table id="resTable"></table></div>
+    <div class="legend">
+      <span><span class="p best-ask">1,234</span> cheapest place to buy</span>
+      <span><span class="p best-bid">1,234</span> best place to sell instantly</span>
+      <span><span class="dot fresh"></span>under 1h <span class="dot aging"></span>within max age <span class="dot old"></span>older</span>
+    </div>
+  </section>
+
+  <!-- MARKET: the fair price of everything -->
+  <section id="view-market" class="hidden">
+    <div class="filters">
+      <label><input type="search" id="mkSearch" placeholder="Search item…"></label>
+      <label>Category <select id="mkCat"><option value="">all</option></select></label>
+      <div class="chips" id="mkTierChips"></div>
+      <div class="chips" id="mkEnchantChips"></div>
+      <label>Min sold/day <input type="number" id="mkMinVol" min="0" step="1"></label>
+      <label title="Days with sales behind the fair price: 1–2 days is easily a troll trade">Min days traded <input type="number" id="mkMinDays" min="1" max="28" step="1"></label>
+      <label><input type="checkbox" id="mkListed"> Listed now</label>
+      <span class="meta" id="mkMeta"></span>
+    </div>
+    <p class="hint"><b>Fair price</b> is what an item actually trades at: the volume-weighted median of its daily average sale price over the last 14 days (28 if it rarely trades), across the city markets, at Normal quality, with troll-priced days (over 4× off the typical day) dropped first. Items that sold on only a day or two can still be off, so they're hidden by default. <b>Ask vs fair</b> is today's cheapest listing within the max price age against that fair price, so a big negative number is an item listed well under what it normally sells for. Click a row for its full history.</p>
+    <div class="table-wrap"><table id="mkTable"></table></div>
+  </section>
+
+  <!-- FLIPS -->
+  <section id="view-flips" class="hidden">
+    <div class="toolbar">
+      <button class="btn primary" id="scanBtn">Scan market</button>
+      <span class="meta" id="scanMeta">No scan yet.</span>
+    </div>
+    <div class="card hidden" id="grocery"></div>
+    <div class="filters">
+      <div class="chips" id="stratChips"></div>
+      <div class="chips" id="riskChips"></div>
+      <label><input type="checkbox" id="needVol" checked> Has volume data</label>
+      <label><input type="checkbox" id="hideSus" checked> Hide ROI &gt; 150%</label>
+      <label>Min profit <input type="number" id="minProfit" value="1000" step="500"></label>
+      <label>Min vol/day <input type="number" id="minVol" value="0" step="5"></label>
+      <label><input type="search" id="search" placeholder="Search item or city…"></label>
+    </div>
+    <p class="hint" id="flipHint"></p>
+    <div class="table-wrap"><table id="flipTable"></table></div>
+    <p class="hint">Instant = buy the cheapest listing, sell straight into a buy order. Sell order = buy, carry, list it (priced at the lower of the ask and the 7-day average). Spread = buy order then sell order in the same city. Units = profit-bearing units per day: your capital ÷ buy price, capped at <span id="captureTxt"></span> of daily traded volume; Est./day = profit × Units. The API never reports how many units are actually listed at a price, so check the real stock in-game before committing. Press <b>+</b> on a flip to put it on your grocery list: it groups what to buy by city, starts each quantity at what your remaining capital covers, and follows new scans, flagging any flip that stops paying.</p>
+  </section>
+  <!-- FOCUS PLANNER -->
+  <section id="view-focus" class="hidden">
+    <div class="filters">
+      <label>Daily focus <input type="number" id="fDaily" min="0" step="1000"></label>
+      <label>Focus cost reduction <input type="number" id="fReduction" min="0" max="95" step="5"> %</label>
+      <label>Station fee <input type="number" id="fFee" min="0" step="50"> /100 nutrition</label>
+      <label>Free farm slots <input type="number" id="fFarm" min="0" step="1"></label>
+      <label>Free pasture slots <input type="number" id="fPasture" min="0" step="1"></label>
+      <button class="btn primary" id="fScan">Refresh market data</button>
+      <span class="meta" id="fMeta"></span>
+    </div>
+    <p class="hint">Focus cost reduction is what your specs take off a recipe's focus cost (compare the base cost with what the craft window shows; every 100 focus efficiency points halves it). Uses are ranked by the silver focus <b>adds</b>: profit with focus minus what you'd make without it. Crafts are capped at 10% of daily traded volume; farming at the free slots you enter.</p>
+    <h3 class="section-title">Today's plan</h3>
+    <div id="fPlanSummary" class="summary"></div>
+    <div class="table-wrap"><table id="fPlan"></table></div>
+    <h3 class="section-title">Best uses of focus</h3>
+    <div class="table-wrap"><table id="fUses"></table></div>
+  </section>
+
+  <!-- FARMING -->
+  <section id="view-farming" class="hidden">
+    <div class="filters">
+      <label><input type="checkbox" id="farmWater" checked> Water crops with focus</label>
+      <label><input type="checkbox" id="farmFeed" checked> Feed animals with focus</label>
+      <span class="meta" id="farmMeta"></span>
+      <button class="btn" id="farmRefresh">Refresh</button>
+    </div>
+    <p class="hint">Per seed or baby. Crops return 3–6 (6–12 with premium); watering adds seed-return chance, and over 100% means a chance of a second seed. Animals eat the cheapest accepted food (every crop is 48 nutrition, meat 52); focused feedings add offspring chance, and exotic mounts can only be bred with focus. Outputs are valued at the 7-day average; seeds, babies and feed at what they cost to buy, never more than the NPC price.</p>
+    <h3 class="section-title">Crops &amp; herbs</h3>
+    <div class="table-wrap"><table id="farmPlants"></table></div>
+    <h3 class="section-title">Animals</h3>
+    <div class="table-wrap"><table id="farmAnimals"></table></div>
+  </section>
+
+  <!-- LABORERS -->
+  <section id="view-laborers" class="hidden">
+    <div class="filters">
+      <label>Bed <select id="labBed"></select></label>
+      <label>Table <select id="labTable"></select></label>
+      <label>Trophies <input type="number" id="labTrophy" min="0" step="5" title="Happiness points from trophies"> pts</label>
+      <span class="meta" id="labHappy"></span>
+    </div>
+    <div class="filters">
+      <label>Journal <select id="labCost">
+        <option value="fill">I fill it myself (pay for an empty journal)</option>
+        <option value="buy">I buy it full on the market</option>
+      </select></label>
+      <label>Value returns at <select id="labSell">
+        <option value="average">7-day average (listed as sell orders)</option>
+        <option value="instant">instant sale (current buy orders)</option>
+        <option value="order">current sell orders</option>
+      </select></label>
+      <div class="chips" id="labKindChips"></div>
+      <div class="chips" id="labTierChips"></div>
+      <label><input type="checkbox" id="labTrophies"> Trophy journals</label>
+      <span class="meta" id="labMeta"></span>
+      <button class="btn" id="labRefresh">Refresh</button>
+    </div>
+    <div class="table-wrap"><table id="labTable2"></table></div>
+    <p class="hint">A laborer takes one full journal and brings back <b>base × yield</b> items drawn from the journal's loot table, or silver for a mercenary. Yield = happiness ÷ <span id="labFullPts"></span>, capped at <span id="labMaxYield"></span>; happiness comes from the bed, the table and trophies. <b>Use vs sell</b> compares giving the journal to a laborer against selling it full, so you can pick the better of the two once you've filled one. Hover a row for the full breakdown.</p>
+  </section>
+
+  <!-- HEARTS & ROYAL TRANSPORTS -->
+  <section id="view-hearts" class="hidden">
+    <div class="toolbar">
+      <span class="meta" id="heartMeta"></span>
+      <button class="btn" id="heartRefresh">Refresh</button>
+    </div>
+    <h3 class="section-title">Heart prices</h3>
+    <div class="table-wrap"><table id="heartTable"></table></div>
+    <p class="hint">Top: <b>buy now</b> (cheapest sell order). Bottom: <b>sell now</b> (best buy order). Hearts drop from faction warfare, so each one is usually cheapest in its own faction's city.</p>
+
+    <h3 class="section-title">Worth spending on refining?</h3>
+    <p class="hint">Every T4–T8 refine can swap <b>one heart for one raw resource</b> — the same single heart whether it saves a T4 ore or a T8.3 one. So a heart is only worth using where the raw it replaces costs more than the heart. Raw prices are capped at their 7-day average so a troll listing can't fake a saving. Return rate applies to the heart and the raw alike, so it doesn't change which is cheaper.</p>
+    <div class="toolbar">
+      <label class="meta"><input type="checkbox" id="heartOnlyWorth" checked> Only where it pays</label>
+      <div class="chips" id="heartLineChips"></div>
+    </div>
+    <div class="table-wrap"><table id="heartUseTable"></table></div>
+
+    <h3 class="section-title">Shadowheart conversion</h3>
+    <p class="hint">Shadowheart converts 1:1 into any other heart for <b id="convFee"></b>, which caps what any heart is worth: nobody pays more than a Shadowheart plus the fee.</p>
+    <div class="table-wrap"><table id="heartConvTable"></table></div>
+
+    <h3 class="section-title">Faction transports</h3>
+    <p class="hint">Take a mission at your faction's store, pay your own hearts, carry the pack to a rival's smuggling agent, swap it, and bring theirs back for <b>their</b> hearts. The amounts are fixed by the game: each store offers missions for set distance bands (e.g. a heavy pack costs 15 hearts and pays 18 at 4–8 zones up to 22 at 10–12; 21 to or from Caerleon). Zones and risk are for the shortest path; hearts are valued at what they'd sell for (7-day average, as a sell order). Hover a row for the path.</p>
+    <div class="toolbar">
+      <label class="meta">My faction <select id="trFaction"><option value="">all</option></select></label>
+      <div class="chips" id="trSizeChips"></div>
+      <label class="meta"><input type="checkbox" id="trNoRed"> Avoid red zones</label>
+    </div>
+    <div class="table-wrap"><table id="trTable"></table></div>
+  </section>
+
+  <!-- LOOKUP -->
+  <section id="view-lookup" class="hidden">
+    <div class="toolbar">
+      <input type="search" id="lookSearch" class="search-wide" placeholder="Search any item: &quot;adept bag&quot;, &quot;broadsword 6.1&quot;, T5_METALBAR…" autocomplete="off">
+      <span class="meta" id="lookMeta"></span>
+      <button class="btn" id="lookRefresh">Refresh</button>
+    </div>
+    <div class="results" id="lookResults"></div>
+    <div id="lookPicked"></div>
+    <div class="table-wrap"><table id="lookTable"></table></div>
+    <h3 class="section-title" id="lookHistTitle"></h3>
+    <div class="toolbar"><div class="chips" id="lookHistCities"></div></div>
+    <div class="chart" id="lookChart"></div>
+    <p class="hint" id="lookHint">Every quality of the item in every market. Top number: <b>buy now</b> (cheapest sell order). Bottom: <b>sell now</b> (best buy order). Prices older than the max age are struck through.</p>
+  </section>
+
+  <!-- ENCHANT: upgrading items as a trade -->
+  <section id="view-enchant" class="hidden">
+    <div class="filters">
+      <label>Sell <select id="enMode">
+        <option value="best">whichever pays more</option>
+        <option value="instant">instantly (buy orders, Black Market)</option>
+        <option value="order">by listing a sell order</option>
+      </select></label>
+      <label><input type="search" id="enSearch" placeholder="Search item…"></label>
+      <div class="chips" id="enTierChips"></div>
+      <div class="chips" id="enLevelChips"></div>
+      <label>Min sold/day <input type="number" id="enMinVol" min="0" step="1"></label>
+      <label><input type="checkbox" id="enNow" checked> Profitable now</label>
+      <label><input type="checkbox" id="enTypical"> Also typically</label>
+      <span class="meta" id="enMeta"></span>
+    </div>
+    <p class="hint">Buy an item, upgrade it in your inventory, sell it. No station is involved, so each part is bought wherever it's cheapest right now (within the max price age) and the result sold wherever pays best: instantly into a buy order, the Black Market included, or listed as a sell order at the lower of today's ask and the city's fair price. Jumps over several levels (.0 → .3) are included; they can pay when no single step does. <b>Typical</b> is the same trade at fair prices: a big "now" with a poor "typical" is usually a stale or lucky price. Volumes are thin for most enchanted gear, so check how many sell a day. Hover a row for every part.</p>
+    <div class="table-wrap"><table id="enTable"></table></div>
+  </section>
+
+  <!-- CRAFT & REFINE -->
+  <section id="view-craft" class="hidden">
+    <div class="filters">
+      <label>Recipe group <select id="cGroup"></select></label>
+      <label>Craft in <select id="cCity"></select></label>
+      <label><input type="checkbox" id="cFocus"> Use focus</label>
+      <label>Daily bonus <select id="cDaily"><option value="0">none</option><option value="10">+10%</option><option value="20">+20%</option></select></label>
+      <label>Station fee <input type="number" id="cFee" min="0" step="50" title="Silver per 100 nutrition, shown on the crafting station"> /100 nutrition</label>
+    </div>
+    <div class="filters">
+      <label>Buy materials <select id="cMatSrc"><option value="craft">in craft city</option><option value="cheapest">cheapest city</option></select></label>
+      <label>by <select id="cMatMode"><option value="ask">buying now</option><option value="bid">buy orders</option></select></label>
+      <label>Sell <select id="cSellMode"><option value="instant">instantly (buy orders)</option><option value="order">with sell orders</option></select></label>
+      <label>in <select id="cSellAt"><option value="craft">craft city</option><option value="best">best market</option></select></label>
+      <div class="chips" id="cTierChips"></div>
+      <div class="chips" id="cEnchantChips"></div>
+      <label title="Refine or craft an ingredient yourself (and its ingredients, all the way down) wherever that is cheaper than buying it"><input type="checkbox" id="cMake"> Make ingredients when cheaper</label>
+      <label><input type="checkbox" id="cComplete" checked> Only fully priced</label>
+      <label><input type="search" id="cSearch" placeholder="Search item…"></label>
+      <span class="meta" id="cMeta"></span>
+      <button class="btn" id="cRefresh">Refresh</button>
+    </div>
+    <div class="summary" id="cRrr"></div>
+    <div class="table-wrap"><table id="craftTable"></table></div>
+    <p class="hint">Cost = materials × (1 − return rate) + station fee, per unit made. Artifacts and other non-returnable inputs are charged in full. Products are priced at Normal quality, and sell-order prices are capped at the 7-day average. Silver/focus is profit per craft ÷ base focus cost (your specs lower the real focus cost). Hover a row for its ingredient breakdown.</p>
+  </section>
+
+  <!-- GOLD -->
+  <section id="view-gold" class="hidden">
+    <div class="toolbar">
+      <div class="chips" id="goldRange"></div>
+      <span class="meta" id="goldMeta"></span>
+    </div>
+    <div class="tiles" id="goldTiles"></div>
+    <div class="chart" id="goldChart"></div>
+    <div class="filters">
+      <label>Gold <input type="number" id="goldAmt" min="0" step="100"></label> <span>= <b id="goldToSilver" class="num"></b> silver</span>
+      <label class="gap-left">Silver <input type="number" id="silverAmt" min="0" step="100000"></label> <span>= <b id="silverToGold" class="num"></b> gold</span>
+    </div>
+    <p class="hint">What one gold costs in silver at the in-game currency exchange, recorded hourly by the data project (it keeps about 30 days). Changes are measured back from the newest point. Conversions use the current price; the exchange moves as you trade, so large amounts cost a little more.</p>
+  </section>
+
+  <!-- KILLBOARD -->
+  <section id="view-kills" class="hidden">
+    <div class="filters">
+      <label><input type="search" id="kSearch" placeholder="Player, guild or alliance…"></label>
+      <label>Min fame <input type="number" id="kMinFame" min="0" step="10000"></label>
+      <span class="meta" id="kMeta"></span>
+    </div>
+    <div class="table-wrap"><table id="kTable"></table></div>
+    <p class="hint">Kills on this server from the official game API, which runs a few minutes behind and only keeps the newest ~1,000 kills (about an hour). While the dashboard runs, every kill is also saved to <code>data/killboard/</code>, so history builds up from the moment you start it. Click a name to open the player. Hover <i>bag</i> for what the victim carried.</p>
+  </section>
+
+  <!-- META: builds and losses from collected kills -->
+  <section id="view-meta" class="hidden">
+    <div class="filters">
+      <div class="chips" id="mSize"></div>
+      <div class="chips" id="mDays"></div>
+      <span class="meta" id="mMeta"></span>
+    </div>
+    <p class="hint">Built from every kill collected while the dashboard runs, so it sharpens as history builds up. <b>Seen</b> counts every appearance. Each kill is split evenly between the players who made it (a 5-player gank gives each 0.2), and the victim takes one death, so <b>kill share</b> = kills ÷ (kills + deaths) is fair across solo and group play: above 50% the build wins more than it loses. Small counts are noise. Builds are compared by item, whatever the tier or enchantment.</p>
+    <h3 class="section-title">Weapons</h3>
+    <div class="table-wrap"><table id="mWeapons"></table></div>
+    <h3 class="section-title">Builds</h3>
+    <div class="table-wrap"><table id="mBuilds"></table></div>
+    <h3 class="section-title">Lost on death</h3>
+    <div class="toolbar"><input type="search" id="mLostSearch" placeholder="Filter items…"><span class="meta" id="mLostTotal"></span></div>
+    <p class="hint">Everything victims wore and carried, by exact tier and enchantment. Whatever isn't looted is destroyed, and the victim has to replace it, so these are the items combat keeps demand up for. Per day is scaled from the hours actually collected.</p>
+    <div class="table-wrap"><table id="mLost"></table></div>
+  </section>
+
+  <!-- PLAYERS & GUILDS -->
+  <section id="view-players" class="hidden">
+    <div class="toolbar">
+      <input type="search" id="pSearch" class="search-wide" placeholder="Search a player or guild (3+ letters)…" autocomplete="off">
+      <span class="meta" id="pMeta"></span>
+    </div>
+    <div class="results" id="pResults"></div>
+    <div id="pProfile"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = (n) => n == null ? "–" : Math.round(n).toLocaleString("en-US");
+const short = (n) => {
+  if (n == null) return "–";
+  const a = Math.abs(n);
+  if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 1 : 2) + "m";
+  if (a >= 1e4) return (n / 1e3).toFixed(1) + "k";
+  return fmt(n);
+};
+const pct = (x) => (x * 100).toFixed(Math.abs(x) < 0.1 ? 1 : 0) + "%";
+const pct1 = (x) => (x * 100).toFixed(1) + "%";
+const ageOf = (ts) => ts ? Date.now() / 1000 - ts : Infinity;
+const ageTxt = (ts) => {
+  const s = ageOf(ts);
+  if (!isFinite(s)) return "–";
+  if (s < 3600) return Math.max(1, Math.round(s / 60)) + "m";
+  if (s < 86400 * 2) return (s / 3600).toFixed(s < 36000 ? 1 : 0) + "h";
+  return Math.round(s / 86400) + "d";
+};
+// Served by our own server from its disk cache (see silver/icons.py); one image per item.
+const icon = (id) => `/icon/${encodeURIComponent(id)}.png`;
+const iconImg = (id, title) =>
+  `<img class="icon" loading="lazy" decoding="async" width="64" height="64" src="${icon(id)}" alt=""${title ? ` title="${esc(title)}"` : ""}>`;
+// Placeholder square until an icon arrives; a missing icon leaves the gap instead of a broken image.
+document.addEventListener("load", (e) => { if (e.target.classList?.contains("icon")) e.target.classList.add("ready"); }, true);
+document.addEventListener("error", (e) => { if (e.target.classList?.contains("icon")) e.target.classList.add("failed"); }, true);
+// Saved values must have the same shape as their default, or the default is used.
+const sameShape = (v, d) => Array.isArray(d) ? Array.isArray(v) : v !== null && typeof v === typeof d;
+const store = {
+  get(k, d) {
+    try { const v = JSON.parse(localStorage.getItem("silver." + k)); return sameShape(v, d) ? v : d; }
+    catch { return d; }
+  },
+  set(k, v) { try { localStorage.setItem("silver." + k, JSON.stringify(v)); } catch {} },
+};
+
+async function getJSON(url, opts) {
+  const r = await fetch(url, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+// URL hash is "#tab", or "#lookup=T6_MAIN_SWORD" so a lookup can be bookmarked or shared.
+const [HASH_TAB, HASH_VALUE] = decodeURIComponent(location.hash.slice(1)).split("=");
+
+let CFG = null;
+const TABS = [...document.querySelectorAll(".tab")].map((b) => b.dataset.tab);
+const S = {
+  tab: TABS.includes(HASH_TAB) ? HASH_TAB : store.get("tab", "resources"),
+  premium: null, capital: null, maxAge: store.get("maxAge", 6),
+  group: store.get("group", "Ore"),
+  tiers: new Set(store.get("tiers", [])), enchants: new Set(store.get("enchants", [])),
+  strats: new Set(store.get("strats", ["instant", "order", "spread"])),
+  risks: new Set(store.get("risks", ["none", "safe", "red", "mists"])),
+  sort: validSort(store.get("sort", { key: "daily", dir: -1 }), "daily"),
+};
+if (![1, 2, 3, 6, 12, 24].includes(S.maxAge)) S.maxAge = 6;
+let RES = null, SCAN = null, polling = null;
+
+/* ---------- shared helpers ---------- */
+function validSort(sort, fallback) {
+  return typeof sort.key === "string" && (sort.dir === 1 || sort.dir === -1) ? sort : { key: fallback, dir: -1 };
+}
+// Returns a function that tells whether a load started now is still the newest one.
+function latestOnly() {
+  let seq = 0;
+  return () => { const mine = ++seq; return () => mine === seq; };
+}
+const warn = (w) => w ? ` <span class="warn">⚠ ${esc(w)}</span>` : "";
+// Fee maths, mirrored in silver/flips.py. Buying through your own buy order costs the setup fee;
+// selling costs sales tax, plus the setup fee when you list a sell order.
+function tax() { return S.premium ? CFG.tax_premium : CFG.tax_no_premium; }
+function sellNet(price, viaOrder) { return price * (1 - tax() - (viaOrder ? CFG.setup_fee : 0)); }
+function buyCost(price, viaOrder) { return price * (viaOrder ? 1 + CFG.setup_fee : 1); }
+function profitOf(f) { return sellNet(f.sell, f.strategy !== "instant") - buyCost(f.buy, f.strategy === "spread"); }
+
+function fresh(ts) { return ageOf(ts) <= S.maxAge * 3600; }
+function freshClass(ts) { return ageOf(ts) < 3600 ? "fresh" : fresh(ts) ? "aging" : "old"; }
+// Cheapest fresh ask and highest fresh bid over one item's markets, for the best-ask/best-bid marks.
+function bestMarks(byMarket, markets) {
+  let minAsk = Infinity, maxBid = 0;
+  for (const m of markets) {
+    const x = byMarket[m]; if (!x) continue;
+    if (x.sell && fresh(x.sell_at)) minAsk = Math.min(minAsk, x.sell);
+    if (x.buy && fresh(x.buy_at)) maxBid = Math.max(maxBid, x.buy);
+  }
+  return { minAsk, maxBid };
+}
+// One market's price cell: ask over bid, then freshness and volume. `extra` is appended inside.
+function priceCell(x, vol, best = {}, extra = "") {
+  if (!x) return `<td><div class="cell num"><span class="none">–</span>${extra}</div></td>`;
+  const askCls = "p ask" + (x.sell && !fresh(x.sell_at) ? " stale" : x.sell === best.minAsk ? " best-ask" : "");
+  const bidCls = "p bid" + (x.buy && !fresh(x.buy_at) ? " stale" : x.buy === best.maxBid ? " best-bid" : "");
+  const newest = Math.max(x.sell_at || 0, x.buy_at || 0);
+  const tip = [
+    `Buy now: ${x.sell ? fmt(x.sell) + " (" + ageTxt(x.sell_at) + " ago)" : "no listings"}`,
+    `Sell now: ${x.buy ? fmt(x.buy) + " (" + ageTxt(x.buy_at) + " ago)" : "no buy orders"}`,
+    vol ? `7 days: ~${fmt(vol.vol)} sold/day, avg ${fmt(vol.avg)}` : "7 days: no history data",
+  ].join("\n");
+  return `<td title="${esc(tip)}"><div class="cell num">
+    <span class="${askCls}">${x.sell ? fmt(x.sell) : "–"}</span>
+    <span class="${bidCls}">${x.buy ? fmt(x.buy) : "–"}</span>
+    <span class="age"><span class="dot ${freshClass(newest)}"></span>${ageTxt(newest)}${vol ? " · " + short(vol.vol) + "/d" : ""}</span>${extra}
+  </div></td>`;
+}
+
+function chips(el, options, isOn, onToggle) {
+  el.innerHTML = options.map(([v, label]) =>
+    `<button class="chip" data-v="${esc(v)}" aria-pressed="${isOn(v)}">${esc(label)}</button>`).join("");
+  el.onclick = (e) => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    onToggle(b.dataset.v);
+  };
+}
+
+// Multi-select chips backed by a Set that is remembered under storeKey.
+function setChips(el, options, set, storeKey, rerender) {
+  chips(el, options, (v) => set.has(v), (v) => {
+    set.has(v) ? set.delete(v) : set.add(v);
+    store.set(storeKey, [...set]);
+    rerender();
+  });
+}
+const TIER_OPTS = [1, 2, 3, 4, 5, 6, 7, 8].map((t) => [String(t), "T" + t]);
+const ENCHANT_OPTS = [0, 1, 2, 3, 4].map((e) => [String(e), "." + e]);
+const tierMatch = (state, it) =>
+  (!state.tiers.size || state.tiers.has(String(it.tier))) && (!state.enchants.size || state.enchants.has(String(it.enchant)));
+
+// Sortable table: cols have {key, label, left?, sort?}; state.sort = {key, dir}.
+// Sort values may be numbers or city names; text columns start ascending (A-Z).
+function cmpVal(a, b) {
+  return typeof a === "string" || typeof b === "string" ? String(a).localeCompare(String(b)) : a - b;
+}
+function comparator(col, state, tiebreak) {
+  return (x, y) => cmpVal(col.sort(y), col.sort(x)) * -state.sort.dir || tiebreak(x, y);
+}
+function sortedBy(cols, state, fallback) {
+  return cols.find((c) => c.key === state.sort.key && c.sort) || cols.find((c) => c.key === fallback);
+}
+function sortHead(cols, state, col) {
+  return `<thead><tr>${cols.map((c) => {
+    const on = col.key === c.key, dir = state.sort.dir < 0 ? "descending" : "ascending";
+    const label = c.label + (on ? (state.sort.dir < 0 ? " ↓" : " ↑") : "");
+    return `<th class="${c.left ? "left" : ""} ${c.sort ? "sortable" : ""} ${on ? "sorted" : ""}" data-k="${c.key}"${on ? ` aria-sort="${dir}"` : ""}>`
+      + (c.sort ? `<button class="th-sort">${label}</button>` : label) + "</th>";
+  }).join("")}</tr></thead>`;
+}
+function bindSort(table, cols, state, storeKey, rerender) {
+  table.onclick = (e) => {
+    const th = e.target.closest("th.sortable"); if (!th) return;
+    const k = th.dataset.k;
+    const first = cols.find((c) => c.key === k)?.text ? 1 : -1;
+    state.sort = state.sort.key === k ? { key: k, dir: -state.sort.dir } : { key: k, dir: first };
+    store.set(storeKey, state.sort);
+    rerender();
+  };
+}
+
+/* ---------- resources ---------- */
+function renderResourceChips() {
+  if (!RES) return;
+  chips($("groupChips"), RES.groups.map((g) => [g.name, g.name]), (v) => v === S.group,
+    (v) => { S.group = v; store.set("group", v); renderResources(); });
+  setChips($("tierChips"), TIER_OPTS, S.tiers, "tiers", renderResources);
+  setChips($("enchantChips"), ENCHANT_OPTS, S.enchants, "enchants", renderResources);
+}
+
+function bestRoutes(item) {
+  // Instant: buy cheapest fresh ask anywhere, sell into the best fresh bid elsewhere.
+  // Order: buy cheapest fresh ask, list at another city's ask (capped at its 7-day average).
+  const p = RES.prices[item.id] || {}, v = RES.volumes[item.id] || {};
+  let instant = null, order = null;
+  for (const a of CFG.cities) {
+    const pa = p[a]; if (!pa?.sell || !fresh(pa.sell_at)) continue;
+    for (const b of CFG.cities) {
+      if (a === b) continue;
+      const pb = p[b]; if (!pb) continue;
+      if (pb.buy && fresh(pb.buy_at)) {
+        const pr = sellNet(pb.buy, false) - pa.sell;
+        if (pr > 0 && (!instant || pr > instant.profit)) instant = { from: a, to: b, profit: pr, roi: pr / pa.sell };
+      }
+      if (pb.sell && fresh(pb.sell_at)) {
+        const target = v[b] ? Math.min(pb.sell, v[b].avg) : pb.sell;
+        const pr = sellNet(target, true) - pa.sell;
+        if (pr > 0 && (!order || pr > order.profit)) order = { from: a, to: b, profit: pr, roi: pr / pa.sell, vol: v[b]?.vol };
+      }
+    }
+  }
+  return { instant, order };
+}
+
+function renderResources() {
+  renderResourceChips();
+  if (!RES) return;
+  const group = RES.groups.find((g) => g.name === S.group) || RES.groups[0];
+  const rows = group.items.filter((it) => tierMatch(S, it));
+  const head = `<thead><tr><th class="left">Item</th>${CFG.cities.map((c) => `<th>${esc(c)}</th>`).join("")}<th class="left">Best flip (${S.maxAge}h data)</th></tr></thead>`;
+  const body = rows.map((it) => {
+    const p = RES.prices[it.id] || {}, v = RES.volumes[it.id] || {};
+    const best = bestMarks(p, CFG.cities);
+    const cells = CFG.cities.map((c) => priceCell(p[c], v[c], best)).join("");
+    const r = bestRoutes(it);
+    const line = (x, kind) => x ? `<div>${kind} ${esc(x.from)} → ${esc(x.to)} <b class="num">+${fmt(x.profit)}</b> <span class="alt num">(${pct(x.roi)})</span></div>` : "";
+    const route = line(r.instant, "Instant") + line(r.order, '<span class="alt">Order</span>') || `<span class="none">no profitable route</span>`;
+    return `<tr><td class="left"><div class="item">${iconImg(it.id)}
+      <span class="tier">${it.label}</span><span class="name">${esc(it.name)}</span></div></td>${cells}<td class="route">${route}</td></tr>`;
+  }).join("");
+  $("resTable").innerHTML = head + `<tbody>${body || `<tr><td class="left none" colspan="99">Nothing matches these filters.</td></tr>`}</tbody>`;
+  $("resMeta").innerHTML = `Updated ${new Date(RES.fetched_at * 1000).toLocaleTimeString()}${warn(RES.warning)}`;
+}
+
+const resLoad = latestOnly();
+async function loadResources(refresh = false) {
+  const current = resLoad();
+  $("resRefresh").disabled = true;
+  $("resMeta").textContent = "Loading…";
+  try {
+    const data = await getJSON("/api/resources" + (refresh ? "?refresh=1" : ""));
+    if (!current()) return;
+    RES = data;
+    if (!RES.groups.some((g) => g.name === S.group)) S.group = RES.groups[0].name;
+    renderResources();
+  } catch (e) {
+    if (current()) $("resMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  } finally {
+    if (current()) $("resRefresh").disabled = false;
+  }
+}
+
+/* ---------- market: fair price of everything ---------- */
+let MARKET = null;
+const MK = { tiers: new Set(store.get("mk.tiers", [])), enchants: new Set(store.get("mk.enchants", [])),
+  sort: validSort(store.get("mk.sort", { key: "value", dir: -1 }), "value") };
+const mkLoad = latestOnly();
+const vsFair = (price, fair) => price && fair ? price / fair - 1 : null;
+const MK_COLS = [
+  { key: "item", label: "Item", left: true, text: true, sort: (r) => r.name },
+  { key: "fair", label: "Fair price", sort: (r) => r.fair },
+  { key: "trend", label: "7-day trend", sort: (r) => r.trend ?? -Infinity },
+  { key: "vol", label: "Sold / day", sort: (r) => r.vol },
+  { key: "value", label: "Traded / day", sort: (r) => r.fair * r.vol },
+  { key: "spread", label: "City spread", sort: (r) => r.low && r.high ? r.high[1] / r.low[1] - 1 : -1 },
+  { key: "bm", label: "Black Market", sort: (r) => vsFair(r.bm, r.fair) ?? -Infinity },
+  { key: "ask", label: "Ask vs fair", sort: (r) => vsFair(r.ask?.[0], r.fair) ?? Infinity },
+  { key: "bid", label: "Bid vs fair", sort: (r) => vsFair(r.bid?.[0], r.fair) ?? -Infinity },
+];
+
+async function loadMarket() {
+  const current = mkLoad();
+  $("mkMeta").textContent = "Loading…";
+  try {
+    const data = await getJSON("/api/market?max_age=" + S.maxAge);
+    if (!current()) return;
+    MARKET = data;
+    const cats = [...new Set(data.rows.map((r) => r.cat).filter(Boolean))].sort();
+    const chosen = store.get("mk.cat", "");
+    $("mkCat").innerHTML = '<option value="">all</option>' + cats.map((c) => `<option value="${esc(c)}">${esc(c[0].toUpperCase() + c.slice(1))}</option>`).join("");
+    $("mkCat").value = cats.includes(chosen) ? chosen : "";
+    renderMarket();
+  } catch (e) {
+    if (current()) $("mkMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  }
+}
+
+function renderMarket() {
+  setChips($("mkTierChips"), TIER_OPTS, MK.tiers, "mk.tiers", renderMarket);
+  setChips($("mkEnchantChips"), ENCHANT_OPTS, MK.enchants, "mk.enchants", renderMarket);
+  if (!MARKET) return;
+  if (!MARKET.rows.length) {
+    $("mkTable").innerHTML = '<tbody><tr><td class="left none">No fair prices yet: the first history sync takes about a minute after the dashboard starts.</td></tr></tbody>';
+    $("mkMeta").textContent = "";
+    return;
+  }
+  const q = $("mkSearch").value.trim().toLowerCase(), cat = $("mkCat").value;
+  const minVol = +$("mkMinVol").value || 0, minDays = +$("mkMinDays").value || 1, listed = $("mkListed").checked;
+  const rows = MARKET.rows.filter((r) => tierMatch(MK, r) && (!cat || r.cat === cat) && r.vol >= minVol && r.days >= minDays
+    && (!listed || r.ask) && (!q || r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q)));
+  const col = sortedBy(MK_COLS, MK, "value");
+  rows.sort(comparator(col, MK, (a, b) => cmpVal(a.id, b.id)));
+  const rel = (x, good) => x == null ? '<span class="none">–</span>'
+    : `<span class="${Math.abs(x) < 0.02 ? "" : (x < 0) === good ? "up" : "down"}">${x > 0 ? "+" : ""}${pct(x)}</span>`;
+  const quote = (qt, fair, good) => qt ? `${fmt(qt[0])} <span class="sub">${esc(qt[1])} · ${ageTxt(qt[2])}</span><br>${rel(vsFair(qt[0], fair), good)}` : '<span class="none">–</span>';
+  const body = rows.slice(0, 300).map((r) => `<tr data-id="${esc(r.id)}">
+      <td class="left"><div class="item">${iconImg(r.id)}
+        <span class="tier">${r.tier}.${r.enchant}</span><span class="name">${esc(r.name)}</span></div></td>
+      <td class="num"><b>${fmt(r.fair)}</b><br><span class="sub">${r.days} days traded</span></td>
+      <td class="num">${r.trend == null ? '<span class="none">–</span>' : signed(r.trend)}</td>
+      <td class="num">${short(r.vol)}</td>
+      <td class="num">${short(r.fair * r.vol)}</td>
+      <td class="num">${r.low && r.high && r.low[0] !== r.high[0]
+        ? `${fmt(r.low[1])} <span class="sub">${esc(r.low[0])}</span><br>${fmt(r.high[1])} <span class="sub">${esc(r.high[0])}</span>` : '<span class="none">one city</span>'}</td>
+      <td class="num">${r.bm ? `${fmt(r.bm)}<br>${rel(vsFair(r.bm, r.fair), false)}` : '<span class="none">–</span>'}</td>
+      <td class="num">${quote(r.ask, r.fair, true)}</td>
+      <td class="num">${quote(r.bid, r.fair, false)}</td></tr>`).join("");
+  $("mkTable").innerHTML = sortHead(MK_COLS, MK, col) + `<tbody>${body || '<tr><td class="left none" colspan="99">No item matches.</td></tr>'}</tbody>`;
+  $("mkMeta").innerHTML = `${fmt(rows.length)} of ${fmt(MARKET.rows.length)} items${rows.length > 300 ? ", showing 300" : ""} · fair prices from ${ageTxt(MARKET.fair_at)} ago`;
+}
+bindSort($("mkTable"), MK_COLS, MK, "mk.sort", renderMarket);
+$("mkTable").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+  setTab("lookup"); selectItem(tr.dataset.id);
+});
+$("mkMinVol").value = store.get("mk.minVol", 1);
+$("mkMinDays").value = store.get("mk.minDays", 3);
+for (const id of ["mkSearch", "mkCat", "mkMinVol", "mkMinDays", "mkListed"]) $(id).addEventListener("input", () => {
+  store.set("mk.minVol", +$("mkMinVol").value || 0); store.set("mk.minDays", +$("mkMinDays").value || 1);
+  store.set("mk.cat", $("mkCat").value); renderMarket();
+});
+
+/* ---------- enchant ---------- */
+let ENCH = null;
+const EN = { tiers: new Set(store.get("en.tiers", [])), levels: new Set(store.get("en.levels", [])),
+  sort: validSort(store.get("en.sort", { key: "now", dir: -1 }), "now") };
+const enLoad = latestOnly();
+const LEVEL_OPTS = [["1", "→ .1"], ["2", "→ .2"], ["3", "→ .3"]];
+const EN_COLS = [
+  { key: "item", label: "Item", left: true, text: true, sort: (r) => r.name },
+  { key: "step", label: "Upgrade", sort: (r) => r.levels[1] * 10 + r.levels[0] },
+  { key: "cost", label: "Cost now", sort: (r) => r.now_cost ?? Infinity },
+  { key: "sell", label: "Sells for", sort: (r) => r.sell?.price ?? -1 },
+  { key: "now", label: "Profit now", sort: (r) => r.now_profit ?? -Infinity },
+  { key: "roi", label: "ROI", sort: (r) => r.now_roi ?? -Infinity },
+  { key: "typical", label: "Typical profit", sort: (r) => r.typical_profit ?? -Infinity },
+  { key: "vol", label: "Sold / day", sort: (r) => Math.max(r.vol || 0, r.bm_vol || 0) },
+];
+
+async function loadEnchant() {
+  const current = enLoad();
+  $("enMeta").textContent = "Loading…";
+  try {
+    const q = new URLSearchParams({ mode: $("enMode").value, max_age: S.maxAge, premium: S.premium ? 1 : 0 });
+    const data = await getJSON("/api/enchanting?" + q);
+    if (!current()) return;
+    ENCH = data;
+    renderEnchant();
+  } catch (e) {
+    if (current()) $("enMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  }
+}
+
+function renderEnchant() {
+  setChips($("enTierChips"), TIER_OPTS.slice(3), EN.tiers, "en.tiers", renderEnchant);
+  setChips($("enLevelChips"), LEVEL_OPTS, EN.levels, "en.levels", renderEnchant);
+  if (!ENCH) return;
+  const q = $("enSearch").value.trim().toLowerCase(), minVol = +$("enMinVol").value || 0;
+  const now = $("enNow").checked, typical = $("enTypical").checked;
+  const rows = ENCH.rows.filter((r) => (!EN.tiers.size || EN.tiers.has(String(r.tier)))
+    && (!EN.levels.size || EN.levels.has(String(r.levels[1])))
+    && Math.max(r.vol || 0, r.bm_vol || 0) >= minVol
+    && (!now || r.now_profit > 0) && (!typical || r.typical_profit > 0)
+    && (!q || r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q)));
+  const col = sortedBy(EN_COLS, EN, "now");
+  rows.sort(comparator(col, EN, (a, b) => cmpVal(a.id, b.id) || a.levels[0] - b.levels[0]));
+  const money = (v) => v == null ? '<span class="none">–</span>' : `<span class="${v >= 0 ? "profit" : "loss"}">${v >= 0 ? "+" : ""}${fmt(v)}</span>`;
+  const body = rows.slice(0, 300).map((r) => {
+    const tip = r.buy ? [
+      ...r.buy.map((b, i) => `${fmt(b.count)} × ${i === 0 ? `${r.name} .${r.levels[0]}` : ENCH.names[b.id] || b.id} @ ${fmt(b.price)} in ${b.city} (${ageTxt(b.at)} old)`),
+      `Sell ${r.sell.how === "instant" ? "instantly" : "as a sell order"} in ${r.sell.city} at ${fmt(r.sell.price)}`,
+    ] : ["No fresh prices for every part right now"];
+    if (r.typical_profit != null) tip.push(`Typically: cost ${fmt(r.typical_cost)}, sold via ${r.typical_sell}, profit ${fmt(r.typical_profit)}`);
+    const base = r.buy?.[0];
+    return `<tr title="${esc(tip.join("\n"))}">
+      <td class="left"><div class="item">${iconImg(r.id)}
+        <span class="tier">${r.tier}.${r.levels[1]}</span><span class="name">${esc(r.name)}</span></div></td>
+      <td class="num">.${r.levels[0]} → .${r.levels[1]}</td>
+      <td class="num">${r.now_cost != null ? `${fmt(r.now_cost)}<br><span class="sub">item in ${esc(base.city)}</span>` : '<span class="none">–</span>'}</td>
+      <td class="num">${r.sell ? `${fmt(r.sell.price)}<br><span class="sub">${r.sell.how === "instant" ? "instant" : "listed"} · ${esc(r.sell.city)}</span>` : '<span class="none">–</span>'}</td>
+      <td class="num">${money(r.now_profit)}</td>
+      <td class="num">${r.now_roi != null ? pct(r.now_roi) : "–"}</td>
+      <td class="num">${money(r.typical_profit)}${r.typical_sell ? `<br><span class="sub">via ${esc(r.typical_sell)}</span>` : ""}</td>
+      <td class="num">${r.vol != null ? short(r.vol) : '<span class="none">?</span>'}${r.bm_vol ? `<br><span class="sub">BM ${short(r.bm_vol)}</span>` : ""}</td></tr>`;
+  }).join("");
+  $("enTable").innerHTML = sortHead(EN_COLS, EN, col) + `<tbody>${body || '<tr><td class="left none" colspan="99">Nothing matches. Try a longer max price age, or turn off "Profitable now".</td></tr>'}</tbody>`;
+  $("enMeta").textContent = `${fmt(rows.length)} upgrades${rows.length > 300 ? ", showing 300" : ""} · prices ${ageTxt(ENCH.fetched_at)} old`;
+}
+bindSort($("enTable"), EN_COLS, EN, "en.sort", renderEnchant);
+$("enMode").value = store.get("en.mode", "best");
+$("enMinVol").value = store.get("en.minVol", 0);
+$("enMode").addEventListener("input", () => { store.set("en.mode", $("enMode").value); loadEnchant(); });
+for (const id of ["enSearch", "enMinVol", "enNow", "enTypical"]) $(id).addEventListener("input", () => {
+  store.set("en.minVol", +$("enMinVol").value || 0); renderEnchant();
+});
+
+/* ---------- flips ---------- */
+const STRATS = [["instant", "Instant"], ["order", "Sell order"], ["spread", "Spread"]];
+const RISKS = [["none", "No travel"], ["safe", "Safe route"], ["red", "Red zone"], ["mists", "Mists"]];
+const RISK_LABEL = Object.fromEntries(RISKS);
+
+const COLS = [
+  { key: "add", label: '<span class="sr-only">Grocery list</span>' },
+  { key: "item", label: "Item", left: true },
+  { key: "strategy", label: "Type", left: true },
+  { key: "from", label: "From", left: true, text: true, sort: (f) => f.from + "\u0000" + f.to },
+  { key: "to", label: "To", left: true, text: true, sort: (f) => f.to + "\u0000" + f.from },
+  { key: "buy", label: "Buy at", sort: (f) => f.buy },
+  { key: "sell", label: "Sell at", sort: (f) => f.sell },
+  { key: "profit", label: "Profit / unit", sort: (f) => f._profit },
+  { key: "roi", label: "ROI", sort: (f) => f._roi },
+  { key: "vol", label: "Vol / day", sort: (f) => f.vol ?? -1 },
+  { key: "units", label: "Units", sort: (f) => f._units ?? -1 },
+  { key: "daily", label: "Est. / day", sort: (f) => f._daily ?? -1 },
+  { key: "age", label: "Data age", sort: (f) => -f._age },
+];
+
+function renderFlips() {
+  setChips($("stratChips"), STRATS, S.strats, "strats", renderFlips);
+  setChips($("riskChips"), RISKS, S.risks, "risks", renderFlips);
+  $("captureTxt").textContent = pct(CFG.volume_capture);
+  renderGrocery();
+  if (!SCAN) { $("flipTable").innerHTML = ""; $("flipHint").textContent = "Press Scan market to check every tradeable item (takes about 10 seconds)."; return; }
+  const minProfit = +$("minProfit").value || 0, minVol = +$("minVol").value || 0;
+  const q = $("search").value.trim().toLowerCase();
+  const needVol = $("needVol").checked, hideSus = $("hideSus").checked;
+  const list = [];
+  SCAN.results.forEach((f, i) => { f._rank = i; });  // server order breaks ties
+  for (const f of SCAN.results) {
+    if (!S.strats.has(f.strategy) || !S.risks.has(f.risk)) continue;
+    if (!fresh(f.buy_at) || !fresh(f.sell_at) || f.buy > S.capital) continue;
+    if (needVol && !f.vol) continue;
+    if ((f.vol || 0) < minVol) continue;
+    if (q && !`${f.name} ${f.item_id} ${f.from} ${f.to}`.toLowerCase().includes(q)) continue;
+    const p = profitOf(f);
+    if (p < minProfit) continue;
+    const roi = p / f.buy;
+    if (hideSus && roi > 1.5) continue;
+    f._profit = p; f._roi = roi; f._age = Math.max(ageOf(f.buy_at), ageOf(f.sell_at));
+    // how many units the estimate assumes: what your capital buys, capped by the share
+    // of daily volume you could realistically take (the API never says how many are listed)
+    f._units = f.vol ? Math.floor(Math.min(S.capital / f.buy, f.vol * CFG.volume_capture)) : null;
+    f._daily = f._units == null ? null : p * f._units;
+    list.push(f);
+  }
+  const col = sortedBy(COLS, S, "daily");
+  list.sort(comparator(col, S, (a, b) => a._rank - b._rank));
+  const shown = list.slice(0, 300);
+  FLIP_BY_KEY = new Map(shown.map((f) => [flipKey(f), f]));
+  const head = sortHead(COLS, S, col);
+  const qn = CFG.quality_names;
+  const body = shown.map((f) => {
+    const qTxt = f.src_quality !== f.quality ? `${qn[f.quality]} order · buy ${qn[f.src_quality]}` : qn[f.quality];
+    const to = f.strategy === "spread" ? '<span class="none">same city</span>' : esc(f.to);
+    const sus = f._roi > 1 ? ` <span class="warn" title="Very high ROI: often a stale price or a lowball order that won't fill">⚠</span>` : "";
+    const listed = f.listed && f.listed !== f.sell ? `<span class="listed" title="Current ask; expected sale capped at 7-day average">${fmt(f.listed)}</span>` : "";
+    const tip = [
+      `Buy side ${ageTxt(f.buy_at)} old, sell side ${ageTxt(f.sell_at)} old`,
+      f.avg ? `7-day avg price at ${f.to}: ${fmt(f.avg)}` : null,
+      f._units != null ? `Units assumes ${pct(CFG.volume_capture)} of ${fmt(f.vol)} traded/day, and ${fmt(Math.floor(S.capital / f.buy))} affordable` : "No volume history, so units are unknown",
+    ].filter(Boolean).join("\n");
+    const picked = GROCERY.some((g) => g.key === flipKey(f));
+    return `<tr title="${esc(tip)}">
+      <td><button class="icon-btn" data-key="${esc(flipKey(f))}" aria-pressed="${picked}" title="${picked ? "Remove from" : "Add to"} grocery list">${picked ? "✓" : "+"}</button></td>
+      <td class="left"><div class="item">${iconImg(f.item_id)}
+        <span class="tier">${f.label}</span><span><span class="name">${esc(f.name)}</span><br><span class="sub">${qTxt}</span></span></div></td>
+      <td class="left">${STRATS.find((s) => s[0] === f.strategy)[1]}</td>
+      <td class="left">${esc(f.from)}</td>
+      <td class="left">${to}<span class="pill ${f.risk}">${RISK_LABEL[f.risk]}</span></td>
+      <td class="num">${fmt(f.buy)}</td>
+      <td class="num">${listed}${fmt(f.sell)}</td>
+      <td class="num profit">+${fmt(f._profit)}</td>
+      <td class="num">${pct(f._roi)}${sus}</td>
+      <td class="num">${f.vol ? short(f.vol) : '<span class="none">?</span>'}</td>
+      <td class="num">${f._units != null ? short(f._units) : '<span class="none">?</span>'}</td>
+      <td class="num">${f._daily != null ? short(f._daily) : '<span class="none">–</span>'}</td>
+      <td class="num"><span class="dot ${freshClass(Math.min(f.buy_at, f.sell_at))}"></span>${ageTxt(Math.min(f.buy_at, f.sell_at))}</td>
+    </tr>`;
+  }).join("");
+  $("flipTable").innerHTML = head + `<tbody>${body || `<tr><td class="left none" colspan="99">No flips match. Try a longer max price age, turn off "Has volume data", or scan again.</td></tr>`}</tbody>`;
+  $("flipHint").textContent = `${list.length.toLocaleString()} flips match${list.length > shown.length ? ", showing the top 300" : ""}. Sales tax ${pct(tax())} + ${pct(CFG.setup_fee)} setup fee on orders.`;
+}
+
+bindSort($("flipTable"), COLS, S, "sort", renderFlips);
+$("flipTable").addEventListener("click", (e) => {
+  const b = e.target.closest(".icon-btn[data-key]"); if (!b) return;
+  toggleGrocery(FLIP_BY_KEY.get(b.dataset.key));
+});
+
+/* ---------- flip grocery list ---------- */
+// Flips picked from the table, grouped by the city you buy in. Kept in this browser. Each new
+// scan updates their prices; one missing from the scan (no longer profitable, or its prices
+// went stale) stays on the list, flagged, so nothing you meant to buy silently disappears.
+let GROCERY = store.get("grocery", []), FLIP_BY_KEY = new Map();
+const flipKey = (f) => [f.item_id, f.quality, f.src_quality, f.strategy, f.from, f.to].join("|");
+const saveGrocery = () => store.set("grocery", GROCERY);
+const plusSilver = (v) => (v >= 0 ? "+" : "−") + short(Math.abs(v));
+const groceryCost = (g) => g.qty * buyCost(g.buy, g.strategy === "spread");
+
+function toggleGrocery(f) {
+  if (!f) return;
+  const key = flipKey(f), i = GROCERY.findIndex((g) => g.key === key);
+  if (i >= 0) GROCERY.splice(i, 1);
+  else {
+    // Start at the estimated units, but only what the capital left after the rest of the list buys.
+    const left = S.capital - GROCERY.filter((g) => !g.done).reduce((a, g) => a + groceryCost(g), 0);
+    const qty = Math.max(1, Math.min(f._units || 1, Math.floor(left / buyCost(f.buy, f.strategy === "spread"))));
+    GROCERY.push({ key, item_id: f.item_id, name: f.name, label: f.label, quality: f.quality, src_quality: f.src_quality,
+      strategy: f.strategy, from: f.from, to: f.to, risk: f.risk, buy: f.buy, sell: f.sell, qty, done: false });
+  }
+  saveGrocery(); renderFlips();
+}
+
+// Refresh prices from the latest scan; returns key -> true for flips still in it and fresh.
+function syncGrocery() {
+  const live = new Map();
+  if (!SCAN) return live;
+  const byKey = new Map(SCAN.results.map((f) => [flipKey(f), f]));
+  let changed = false;
+  for (const g of GROCERY) {
+    const f = byKey.get(g.key);
+    if (!f || !fresh(f.buy_at) || !fresh(f.sell_at)) continue;
+    live.set(g.key, true);
+    if (f.buy !== g.buy || f.sell !== g.sell) { g.buy = f.buy; g.sell = f.sell; changed = true; }
+  }
+  if (changed) saveGrocery();
+  return live;
+}
+
+function groceryText() {
+  const qn = CFG.quality_names, lines = [];
+  for (const [city, items] of groupBy(GROCERY, (g) => g.from)) {
+    lines.push(`Buy in ${city}`);
+    for (const g of items) {
+      const buy = g.strategy === "spread" ? "buy order" : "buy";
+      const sell = g.strategy === "spread" ? "then list here" : `→ ${g.to}, ${g.strategy === "order" ? "list" : "sell now"}`;
+      lines.push(`  [${g.done ? "x" : " "}] ${g.qty} × ${g.name} ${g.label} (${qn[g.src_quality]}), ${buy} @ ${fmt(g.buy)} = ${short(groceryCost(g))} ${sell} @ ${fmt(g.sell)}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function groupBy(list, keyOf) {
+  const groups = new Map();
+  for (const x of list) { const k = keyOf(x); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); }
+  return groups;
+}
+
+function renderGrocery() {
+  const el = $("grocery");
+  el.classList.toggle("hidden", !GROCERY.length);
+  if (!GROCERY.length) return;
+  const live = syncGrocery(), qn = CFG.quality_names;
+  const cost = groceryCost, gain = (g) => g.qty * profitOf(g);
+  const todo = GROCERY.filter((g) => !g.done);
+  const total = todo.reduce((a, g) => a + cost(g), 0), profit = todo.reduce((a, g) => a + gain(g), 0);
+  const over = total > S.capital ? ` <span class="warn">⚠ ${short(total - S.capital)} over your capital</span>` : "";
+  const groups = [...groupBy(GROCERY, (g) => g.from)].map(([city, items]) => {
+    const left = items.filter((g) => !g.done);
+    return `<tr class="group"><th class="left" colspan="4">Buy in ${esc(city)}</th>
+      <th class="num">${short(left.reduce((a, g) => a + cost(g), 0))}</th><th colspan="4"></th></tr>`
+    + items.map((g) => {
+      const flag = SCAN && !live.has(g.key) ? ` <span class="warn" title="Not in the latest scan with fresh prices: it may no longer pay. Check in-game.">⚠ recheck</span>` : "";
+      const q = g.src_quality !== g.quality ? `buy ${qn[g.src_quality]}, sells as ${qn[g.quality]}` : qn[g.quality];
+      return `<tr class="${g.done ? "done" : ""}" data-key="${esc(g.key)}">
+        <td><input type="checkbox" data-act="done" ${g.done ? "checked" : ""} aria-label="Bought"></td>
+        <td class="left"><div class="item">${iconImg(g.item_id)}<span class="tier">${g.label}</span>
+          <span><span class="name">${esc(g.name)}</span>${flag}<br><span class="sub">${q} · ${STRATS.find((s) => s[0] === g.strategy)[1]}</span></span></div></td>
+        <td><input type="number" class="qty" data-act="qty" min="1" step="1" value="${g.qty}" aria-label="Quantity"></td>
+        <td class="num">${fmt(g.buy)}</td>
+        <td class="num">${short(cost(g))}</td>
+        <td class="left">${g.strategy === "spread" ? '<span class="none">same city</span>' : esc(g.to)}<span class="pill ${g.risk}">${RISK_LABEL[g.risk]}</span></td>
+        <td class="num">${fmt(g.sell)}</td>
+        <td class="num ${profitOf(g) >= 0 ? "profit" : "loss"}">${plusSilver(gain(g))}</td>
+        <td><button class="icon-btn" data-act="remove" title="Remove">×</button></td>
+      </tr>`;
+    }).join("");
+  }).join("");
+  el.innerHTML = `<div class="card-head">
+      <h3>Grocery list</h3>
+      <span class="meta">${todo.length} to buy · cost <b class="num">${short(total)}</b> · est. profit <b class="num ${profit >= 0 ? "profit" : "loss"}">${plusSilver(profit)}</b>${over}</span>
+      <span class="actions">
+        <button class="btn" data-act="copy">Copy list</button>
+        <button class="btn" data-act="clear-done" ${todo.length === GROCERY.length ? "disabled" : ""}>Clear bought</button>
+        <button class="btn" data-act="clear">Clear all</button>
+      </span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th><span class="sr-only">Bought</span></th><th class="left">Item</th><th>Qty</th><th>Buy at</th><th>Cost</th>
+        <th class="left">Sell in</th><th>Sell at</th><th>Est. profit</th><th><span class="sr-only">Remove</span></th></tr></thead>
+      <tbody>${groups}</tbody>
+    </table></div>`;
+}
+
+$("grocery").addEventListener("change", (e) => {
+  const tr = e.target.closest("tr[data-key]"), g = tr && GROCERY.find((x) => x.key === tr.dataset.key);
+  if (!g) return;
+  if (e.target.dataset.act === "done") g.done = e.target.checked;
+  if (e.target.dataset.act === "qty") g.qty = Math.max(1, Math.floor(+e.target.value) || 1);
+  saveGrocery(); renderGrocery();
+});
+$("grocery").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  const act = b.dataset.act, tr = b.closest("tr[data-key]");
+  if (act === "remove") GROCERY = GROCERY.filter((g) => g.key !== tr.dataset.key);
+  else if (act === "clear-done") GROCERY = GROCERY.filter((g) => !g.done);
+  else if (act === "clear") { if (!confirm("Clear the whole grocery list?")) return; GROCERY = []; }
+  else if (act === "copy") {
+    await copyText(groceryText());
+    b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy list"; }, 1500);
+    return;
+  }
+  saveGrocery(); renderFlips();
+});
+
+// The clipboard API needs a secure page (localhost counts, a LAN address doesn't), so fall back.
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return; } catch {}
+  const t = Object.assign(document.createElement("textarea"), { value: text });
+  document.body.append(t); t.select(); document.execCommand("copy"); t.remove();
+}
+
+function showScanState(st) {
+  if (st.result) SCAN = st.result;
+  $("scanBtn").disabled = st.running;
+  if (st.running) $("scanMeta").textContent = `Scanning… ${st.progress}`;
+  else if (st.error) $("scanMeta").innerHTML = `<span class="error">Scan failed: ${esc(st.error)}</span>`;
+  else if (SCAN) $("scanMeta").innerHTML = `Last scan ${new Date(SCAN.scanned_at * 1000).toLocaleTimeString()} · ${SCAN.items_scanned.toLocaleString()} items in ${SCAN.duration}s · ${SCAN.results.length.toLocaleString()} candidates${(SCAN.warnings || []).map(warn).join("")}`;
+}
+
+async function pollScan() {
+  try {
+    const st = await getJSON("/api/flips");
+    showScanState(st);
+    if (st.running) { polling = setTimeout(pollScan, 1000); return; }
+    renderFlips();
+  } catch (e) {
+    $("scanMeta").innerHTML = `<span class="error">Can't reach the local server (${esc(e.message)}). Is it still running?</span>`;
+    $("scanBtn").disabled = false;
+  }
+  polling = null;
+}
+
+$("scanBtn").onclick = async () => {
+  $("scanBtn").disabled = true;
+  try { await fetch("/api/flips/scan", { method: "POST" }); } catch {}
+  if (!polling) pollScan();
+};
+for (const id of ["needVol", "hideSus", "minProfit", "minVol", "search"]) $(id).addEventListener("input", renderFlips);
+
+/* ---------- craft & refine ---------- */
+let CRAFT = null, CB = null;
+const C = {
+  section: store.get("c.section", "Refining"), group: store.get("c.group", "Metal Bars"),
+  city: store.get("c.city", "Thetford"),
+  tiers: new Set(store.get("c.tiers", [])), enchants: new Set(store.get("c.enchants", [])),
+  sort: validSort(store.get("c.sort", { key: "profit", dir: -1 }), "profit"),
+};
+const CRAFT_PREFS = ["cFocus", "cDaily", "cFee", "cMatSrc", "cMatMode", "cSellMode", "cSellAt", "cComplete", "cMake"];
+// Settings the server's make-or-buy plans depend on: changing one refetches them.
+const PLAN_PREFS = new Set(["cFocus", "cDaily", "cFee", "cMatSrc", "cMatMode", "cMake"]);
+
+function returnRate(recipe, city) {
+  let b = CB.bonus.base + (+$("cDaily").value || 0) / 100;
+  if (recipe.bonus_city === city) b += recipe.bonus.startsWith("refine:") ? CB.bonus.refine : CB.bonus.craft;
+  if ($("cFocus").checked) b += CB.bonus.focus;
+  return b / (1 + b);
+}
+
+// Cheapest way to get one unit of a material: {price, city} or null.
+function materialPrice(id) {
+  const p = CRAFT.prices[id] || {};
+  const cities = $("cMatSrc").value === "craft" ? [C.city] : CFG.cities;
+  let best = null;
+  for (const c of cities) {
+    const x = p[c]; if (!x) continue;
+    const price = $("cMatMode").value === "ask"
+      ? (x.sell && fresh(x.sell_at) ? x.sell : null)
+      : (x.buy && fresh(x.buy_at) ? buyCost(x.buy, true) : null);
+    if (price && (!best || price < best.price)) best = { price, city: c };
+  }
+  return best;
+}
+
+// Best net silver for one unit of the product after fees: {net, gross, city} or null.
+function productSale(id) {
+  const p = CRAFT.prices[id] || {}, v = CRAFT.volumes[id] || {};
+  const order = $("cSellMode").value === "order";
+  const markets = $("cSellAt").value === "craft" ? [C.city] : [...CFG.cities, "Black Market"];
+  let best = null;
+  for (const c of markets) {
+    const x = p[c]; if (!x) continue;
+    let gross = null;
+    if (order && c !== "Black Market" && x.sell && fresh(x.sell_at)) gross = v[c] ? Math.min(x.sell, v[c].avg) : x.sell;
+    else if (!order && x.buy && fresh(x.buy_at)) gross = x.buy;
+    const net = gross && sellNet(gross, order);
+    if (net && (!best || net > best.net)) best = { net, gross, city: c, vol: v[c]?.vol };
+  }
+  return best;
+}
+
+function craftRow(r) {
+  const rate = r.upgrade ? 0 : returnRate(r, C.city);  // enchanting returns nothing
+  let mats = 0; const missing = [], lines = [];
+  for (const [id, n, returned] of r.inputs) {
+    const m = materialPrice(id);
+    const name = CRAFT.names[id] || id;
+    if (!m) { missing.push(name); lines.push(`${n} × ${name}: no fresh price`); continue; }
+    const eff = n * m.price * (returned ? 1 - rate : 1);
+    mats += eff;
+    lines.push(`${n} × ${name} @ ${fmt(m.price)} (${m.city})${returned ? "" : " – not returned"} = ${fmt(eff)}`);
+  }
+  const fee = r.upgrade ? 0 : r.value * CB.bonus.nutrition_per_value * (+$("cFee").value || 0) / 100;
+  const bought = missing.length ? null : (mats + fee + r.silver) / r.amount;
+  lines.push(r.upgrade ? "Enchanting: no station fee, nothing returned"
+    : `Station fee ${fmt(fee)}${r.amount > 1 ? `, makes ${r.amount}` : ""}`);
+  const plan = $("cMake").checked ? r.plan : null;
+  if (plan) {
+    const nm = (id) => CRAFT.names[id] || id;
+    lines.length = 0;
+    lines.push(`Cheapest way, per unit made: ${fmt(plan.cost)}${bought ? ` (buying every ingredient: ${fmt(bought)})` : ""}`);
+    for (const m of plan.makes) lines.push(`Make ${m.units.toFixed(2)} × ${nm(m.id)} in ${m.city} (${pct1(m.rate)} returned)`);
+    for (const b of plan.buys) lines.push(`Buy ${b.units.toFixed(2)} × ${nm(b.id)} @ ${fmt(b.price)} in ${b.where}`);
+  }
+  const cost = plan ? plan.cost : bought;
+  const sale = productSale(r.id);
+  const profit = sale && cost != null ? sale.net - cost : null;
+  const focusPerUnit = plan ? plan.focus : r.focus / r.amount;
+  return {
+    r, rate, cost, sale, profit, missing: cost == null ? missing : [], tip: lines.join("\n"),
+    saved: plan && bought ? 1 - plan.cost / bought : null, made: plan ? plan.makes.length : 0,
+    roi: profit != null ? profit / cost : null,
+    perFocus: profit != null && $("cFocus").checked && focusPerUnit ? profit / focusPerUnit : null,
+  };
+}
+
+const CCOLS = [
+  { key: "item", label: "Item", left: true },
+  { key: "rate", label: "Return", sort: (x) => x.rate },
+  { key: "cost", label: "Cost / unit", sort: (x) => x.cost },
+  { key: "sell", label: "Sells for", sort: (x) => x.sale?.net ?? -1 },
+  { key: "profit", label: "Profit / unit", sort: (x) => x.profit ?? -Infinity },
+  { key: "roi", label: "ROI", sort: (x) => x.roi ?? -Infinity },
+  { key: "vol", label: "Vol / day", sort: (x) => x.sale?.vol ?? -1 },
+  { key: "focus", label: "Focus / craft", sort: (x) => x.r.focus },
+  { key: "perFocus", label: "Silver / focus", sort: (x) => x.perFocus ?? -Infinity },
+  { key: "bonus", label: "Bonus city", left: true, text: true, sort: (x) => x.r.bonus_city || "~" },
+];
+
+function renderCraft() {
+  if (!CB) return;
+  setChips($("cTierChips"), TIER_OPTS, C.tiers, "c.tiers", renderCraft);
+  setChips($("cEnchantChips"), ENCHANT_OPTS, C.enchants, "c.enchants", renderCraft);
+  if (!CRAFT) return;
+  const sample = CRAFT.recipes[0];
+  const taxLine = ` · Tax ${pct(tax())}${$("cSellMode").value === "order" ? ` + ${pct(CFG.setup_fee)} setup` : ""}`;
+  $("cRrr").innerHTML = (sample.upgrade
+    ? `<b>Enchanting ${esc(C.group)}</b>: buy the item one level below plus the runes/souls/relics it needs. Done from your inventory, so there is no return rate, station fee or focus cost. The <b>Enchant</b> tab compares every item at once, buying each part wherever it's cheapest.`
+    : `Return rate for <b>${esc(C.group)}</b> in <b>${esc(C.city)}</b>: <b>${pct1(returnRate(sample, C.city))}</b>` +
+      (sample.bonus_city ? (sample.bonus_city === C.city ? ` <span class="bonus-yes">(specialty city)</span>` :
+        ` · in ${esc(sample.bonus_city)} (specialty) it would be <b>${pct1(returnRate(sample, sample.bonus_city))}</b>`)
+        : " · no city has a specialty for this group")) + taxLine;
+
+  const q = $("cSearch").value.trim().toLowerCase(), complete = $("cComplete").checked;
+  const rows = CRAFT.recipes
+    .filter((r) => tierMatch(C, r))
+    .filter((r) => !q || r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
+    .map(craftRow)
+    .filter((x) => !complete || x.profit != null);
+  const col = sortedBy(CCOLS, C, "profit");
+  rows.sort(comparator(col, C, (a, b) => cmpVal(a.r.id, b.r.id)));
+  const head = sortHead(CCOLS, C, col);
+  const body = rows.map((x) => {
+    const { r, sale } = x;
+    const profit = x.profit == null ? `<span class="none">${x.missing.length ? "missing prices" : "no buyer"}</span>`
+      : `<span class="${x.profit >= 0 ? "profit" : "loss"}">${x.profit >= 0 ? "+" : ""}${fmt(x.profit)}</span>`;
+    return `<tr title="${esc(x.tip)}">
+      <td class="left"><div class="item">${iconImg(r.icon || r.id)}
+        <span class="tier">${r.tier}.${r.enchant}</span><span class="name">${esc(r.name)}</span></div></td>
+      <td class="num">${r.upgrade ? '<span class="none">n/a</span>' : pct1(x.rate)}</td>
+      <td class="num">${x.cost == null ? '<span class="none">–</span>' : fmt(x.cost)}${x.saved > 0.001 ? `<br><span class="sub">${x.made} made · saves ${pct(x.saved)}</span>` : ""}</td>
+      <td class="num">${sale ? `${fmt(sale.gross)} <span class="q">${esc(sale.city)}</span>` : '<span class="none">–</span>'}</td>
+      <td class="num">${profit}</td>
+      <td class="num">${x.roi != null ? pct(x.roi) : "–"}</td>
+      <td class="num">${sale?.vol ? short(sale.vol) : '<span class="none">?</span>'}</td>
+      <td class="num">${r.focus ? fmt(r.focus) : '<span class="none">–</span>'}</td>
+      <td class="num">${x.perFocus != null ? x.perFocus.toFixed(1) : '<span class="none">–</span>'}</td>
+      <td class="left">${r.bonus_city ? (r.bonus_city === C.city ? `<span class="bonus-yes">${esc(r.bonus_city)} ✓</span>` : esc(r.bonus_city)) : '<span class="none">–</span>'}</td>
+    </tr>`;
+  }).join("");
+  $("craftTable").innerHTML = head + `<tbody>${body || `<tr><td class="left none" colspan="99">Nothing to show. Try a longer max price age, "cheapest city" for materials, or turn off "Only fully priced".</td></tr>`}</tbody>`;
+  $("cMeta").innerHTML = `${rows.length} recipes · prices ${new Date(CRAFT.fetched_at * 1000).toLocaleTimeString()}${warn(CRAFT.warning)}`;
+}
+
+bindSort($("craftTable"), CCOLS, C, "c.sort", renderCraft);
+
+const craftLoad = latestOnly();
+async function loadCraft(refresh = false) {
+  const current = craftLoad();
+  $("cRefresh").disabled = true;
+  $("cMeta").textContent = "Loading prices…";
+  try {
+    const q = new URLSearchParams({ section: C.section, group: C.group });
+    if (refresh) q.set("refresh", 1);
+    if ($("cMake").checked) {
+      q.set("plan", 1);
+      for (const [k, id] of [["city", "cCity"], ["daily", "cDaily"], ["fee", "cFee"], ["mat_src", "cMatSrc"], ["mat_mode", "cMatMode"]]) q.set(k, $(id).value);
+      q.set("focus", $("cFocus").checked ? 1 : 0);
+      q.set("max_age", S.maxAge);
+    }
+    const data = await getJSON("/api/craft?" + q);
+    if (!current()) return;  // a newer load (e.g. another group) superseded this one
+    data.recipes.forEach((r, i) => { r.plan = data.plans?.[i]; });
+    CRAFT = data;
+    renderCraft();
+  } catch (e) {
+    if (current()) $("cMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  } finally {
+    if (current()) $("cRefresh").disabled = false;
+  }
+}
+
+let planTimer = null;
+async function initCraft() {
+  try { CB = await getJSON("/api/craft/groups"); }
+  catch (e) { $("cMeta").innerHTML = `<span class="error">Failed to load recipes: ${esc(e.message)}</span>`; return; }
+  let html = "", section = null;
+  for (const g of CB.groups) {
+    if (g.section !== section) { html += (section ? "</optgroup>" : "") + `<optgroup label="${esc(g.section)}">`; section = g.section; }
+    html += `<option value="${esc(g.section + "|" + g.group)}">${esc(g.group)} (${g.count})</option>`;
+  }
+  $("cGroup").innerHTML = html + "</optgroup>";
+  if (!CB.groups.some((g) => g.section === C.section && g.group === C.group)) {
+    C.section = CB.groups[0].section; C.group = CB.groups[0].group;
+  }
+  if (!CFG.cities.includes(C.city)) C.city = CFG.cities[0];
+  $("cGroup").value = C.section + "|" + C.group;
+  $("cCity").innerHTML = CFG.cities.map((c) => `<option>${esc(c)}</option>`).join("");
+  $("cCity").value = C.city;
+  const defaults = { cFocus: false, cDaily: "0", cFee: CFG.station_fee, cMatSrc: "cheapest", cMatMode: "ask", cSellMode: "instant", cSellAt: "best", cComplete: true };
+  for (const id of CRAFT_PREFS) {
+    const v = store.get("c." + id, defaults[id]);
+    if ($(id).type === "checkbox") $(id).checked = v;
+    else {
+      $(id).value = v;
+      if ($(id).value === "" || ($(id).type === "number" && !(+$(id).value >= 0))) $(id).value = defaults[id];
+    }
+    $(id).addEventListener("input", () => {
+      store.set("c." + id, $(id).type === "checkbox" ? $(id).checked : $(id).value);
+      if (PLAN_PREFS.has(id) && ($("cMake").checked || id === "cMake")) { clearTimeout(planTimer); planTimer = setTimeout(loadCraft, 250); }
+      else renderCraft();
+    });
+  }
+  $("cGroup").onchange = () => {
+    [C.section, C.group] = $("cGroup").value.split("|");
+    store.set("c.section", C.section); store.set("c.group", C.group);
+    CRAFT = null; $("craftTable").innerHTML = ""; $("cRrr").textContent = "";
+    loadCraft().then(() => {  // jump to the group's specialty city
+      const city = CRAFT?.recipes[0]?.bonus_city;
+      if (city && city !== C.city) { C.city = city; $("cCity").value = city; store.set("c.city", city); renderCraft(); }
+    });
+  };
+  $("cCity").onchange = () => { C.city = $("cCity").value; store.set("c.city", C.city); $("cMake").checked ? loadCraft() : renderCraft(); };
+  $("cSearch").addEventListener("input", renderCraft);
+  $("cRefresh").onclick = () => loadCraft(true);
+  renderCraft();
+  loadCraft();
+}
+
+/* ---------- lookup ---------- */
+let LOOK = null, LOOK_RESULTS = [];
+const L = { id: (HASH_TAB === "lookup" && HASH_VALUE) || store.get("l.id", ""), query: store.get("l.query", "") };
+
+function renderLookResults() {
+  $("lookResults").innerHTML = LOOK_RESULTS.map((r) => `
+    <button class="result" data-id="${esc(r.id)}" aria-pressed="${r.id === L.id}" title="${esc(r.id)}">
+      ${iconImg(r.id)}<span class="tier">${r.label}</span>${esc(r.name)}
+    </button>`).join("") || (L.query ? `<span class="none">No item matches.</span>` : "");
+}
+
+function renderLookup() {
+  renderLookResults();
+  if (!LOOK) { $("lookPicked").innerHTML = ""; $("lookTable").innerHTML = ""; return; }
+  const markets = [...CFG.cities, "Black Market"];
+  const tiers = [...new Set(LOOK.variants.map((v) => v.tier))].map((t) => [String(t), "T" + t]);
+  const enchants = [...new Set(LOOK.variants.filter((v) => v.tier === +LOOK.label[0]).map((v) => v.enchant))]
+    .map((e) => [String(e), "." + e]);
+  const jump = (tier, enchant) => LOOK.variants.find((v) => v.tier === tier && v.enchant === enchant)
+    || LOOK.variants.find((v) => v.tier === tier) || null;
+  const [curTier, curEnchant] = LOOK.label.split(".").map(Number);
+
+  $("lookPicked").innerHTML = `<div class="picked">
+      <img class="icon" decoding="async" fetchpriority="high" width="64" height="64" src="${icon(LOOK.id)}" alt="">
+      <div>
+        <h2>${esc(LOOK.name)}</h2>
+        <div class="sub">${esc(LOOK.id)} · tier ${LOOK.label}</div>
+        <div class="chips" id="lookTierChips"></div>
+      </div>
+      <div class="chips" id="lookEnchantChips"></div>
+    </div>`;
+  chips($("lookTierChips"), tiers, (v) => +v === curTier,
+    (v) => { const hit = jump(+v, curEnchant); if (hit) selectItem(hit.id); });
+  chips($("lookEnchantChips"), enchants, (v) => +v === curEnchant,
+    (v) => { const hit = jump(curTier, +v); if (hit) selectItem(hit.id); });
+
+  const head = `<thead><tr><th class="left">Quality</th><th title="Volume-weighted median of daily sale prices, city markets pooled">Fair price</th>${markets.map((m) => `<th>${esc(m)}</th>`).join("")}</tr></thead>`;
+  const body = Object.entries(CFG.quality_names).map(([q, qName]) => {
+    const byCity = LOOK.prices[q] || {}, vols = LOOK.volumes[q] || {}, fair = LOOK.fair[q] || {};
+    if (!markets.some((m) => byCity[m] || fair[m])) return "";
+    const best = bestMarks(byCity, markets);
+    const cells = markets.map((m) => {
+      const fm = fair[m];
+      const fairLine = fm ? `<span class="age" title="Fair price here over ${fm.days} traded days">fair ${fmt(fm.price)}</span>` : "";
+      return priceCell(byCity[m], vols[m], best, fairLine);
+    }).join("");
+    const pooled = fair[""];
+    const fairCell = pooled ? `<td class="num"><b>${fmt(pooled.price)}</b><br><span class="sub">${short(pooled.vol)}/d${pooled.trend != null ? " · " + signed(pooled.trend) : ""}</span></td>`
+      : '<td><span class="none">–</span></td>';
+    return `<tr><td class="left">${esc(qName)}</td>${fairCell}${cells}</tr>`;
+  }).join("");
+  $("lookTable").innerHTML = head + `<tbody>${body || `<tr><td class="left none" colspan="99">No market has priced this item yet. Open a market in-game with your data client running.</td></tr>`}</tbody>`;
+  $("lookMeta").innerHTML = `Prices ${new Date(LOOK.fetched_at * 1000).toLocaleTimeString()}${warn(LOOK.warning)}`;
+  renderLookHistory();
+}
+
+// Daily average sale price at Normal quality: the city markets pooled (volume-weighted), or one market.
+function renderLookHistory() {
+  const hist = LOOK?.history || {};
+  const cities = Object.keys(hist).sort();
+  if (!cities.length) { $("lookHistTitle").textContent = ""; $("lookHistCities").innerHTML = ""; $("lookChart").innerHTML = ""; $("lookChart").classList.add("hidden"); return; }
+  $("lookChart").classList.remove("hidden");
+  if (L.histCity && !hist[L.histCity]) L.histCity = "";
+  chips($("lookHistCities"), [["", "City markets"], ...cities.map((c) => [c, c])], (v) => v === (L.histCity || ""),
+    (v) => { L.histCity = v; renderLookHistory(); });
+  const byDay = new Map();
+  for (const c of L.histCity ? [L.histCity] : cities.filter((c) => c !== "Black Market")) {
+    for (const [day, count, avg] of hist[c]) {
+      const d = byDay.get(day) || [0, 0];
+      byDay.set(day, [d[0] + count, d[1] + count * avg]);
+    }
+  }
+  const pts = [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([day, [n, total]]) => [day, total / n, n]);
+  $("lookHistTitle").textContent = `Daily average sale price, Normal quality (${L.histCity || "city markets"}, ${pts.length} days)`;
+  lineChart($("lookChart"), pts, "Daily average sale price",
+    ([t, v, n]) => `<b class="num">${fmt(v)}</b> · ${fmt(n)} sold · ${new Date(t * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })}`);
+}
+
+const lookLoad = latestOnly();
+async function loadItem(refresh = false) {
+  if (!L.id) return;
+  const current = lookLoad();
+  $("lookRefresh").disabled = true;
+  $("lookMeta").textContent = "Loading…";
+  try {
+    const data = await getJSON(`/api/item?id=${encodeURIComponent(L.id)}${refresh ? "&refresh=1" : ""}`);
+    if (!current()) return;
+    LOOK = data;
+    renderLookup();
+  } catch (e) {
+    if (current()) $("lookMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  } finally {
+    if (current()) $("lookRefresh").disabled = false;
+  }
+}
+
+function updateHash() {
+  const target = S.tab === "lookup" ? L.id : S.tab === "players" && P.target ? P.target : "";
+  history.replaceState(null, "", "#" + S.tab + (target ? "=" + encodeURIComponent(target) : ""));
+}
+
+function selectItem(id) {
+  L.id = id; store.set("l.id", id);
+  updateHash();
+  LOOK = null;
+  renderLookResults();
+  loadItem();
+}
+
+const searchLoad = latestOnly();
+async function runSearch() {
+  const current = searchLoad();
+  L.query = $("lookSearch").value; store.set("l.query", L.query);
+  if (!L.query.trim()) { LOOK_RESULTS = []; renderLookResults(); return; }
+  try {
+    const data = await getJSON(`/api/search?q=${encodeURIComponent(L.query)}`);
+    if (!current()) return;
+    LOOK_RESULTS = data.results;
+    renderLookResults();
+  } catch (e) {
+    if (current()) $("lookMeta").innerHTML = `<span class="error">Search failed: ${esc(e.message)}</span>`;
+  }
+}
+
+let searchTimer = null;
+$("lookSearch").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, 200);
+});
+$("lookSearch").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && LOOK_RESULTS.length) selectItem(LOOK_RESULTS[0].id);
+});
+$("lookResults").onclick = (e) => {
+  const b = e.target.closest(".result"); if (b) selectItem(b.dataset.id);
+};
+$("lookRefresh").onclick = () => loadItem(true);
+
+/* ---------- hearts & royal transports ---------- */
+let HEARTS = null;
+const HState = { lines: new Set(store.get("h.lines", [])) };
+
+// Cheapest fresh sell order across cities: {price, city}. With capAtAverage, each city's ask
+// is valued at no more than its 7-day traded average, so a troll listing can't inflate it.
+function cheapest(id, capAtAverage = false) {
+  let best = null;
+  for (const [city, p] of Object.entries(HEARTS.prices[id] || {})) {
+    if (!p.sell || !fresh(p.sell_at)) continue;
+    const avg = capAtAverage ? HEARTS.volumes[id]?.[city]?.avg : null;
+    const price = avg ? Math.min(p.sell, avg) : p.sell;
+    if (!best || price < best.price) best = { price, city };
+  }
+  return best;
+}
+function bestBid(id) {   // best fresh buy order across cities: {price, city}
+  let best = null;
+  for (const [city, p] of Object.entries(HEARTS.prices[id] || {})) {
+    if (p.buy && fresh(p.buy_at) && (!best || p.buy > best.price)) best = { price: p.buy, city };
+  }
+  return best;
+}
+
+function renderHearts() {
+  if (!HEARTS) return;
+  const cities = CFG.cities;
+
+  // 1. prices per city
+  const head = `<thead><tr><th class="left">Heart</th><th class="left">Faction</th><th class="left">Refines</th>${cities.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>`;
+  const body = HEARTS.hearts.map((h) => {
+    const vols = HEARTS.volumes[h.id] || {}, prices = HEARTS.prices[h.id] || {}, best = bestMarks(prices, cities);
+    return `<tr><td class="left"><div class="item">${iconImg(h.id)}
+        <span class="name">${esc(h.name)}</span></div></td>
+      <td class="left">${esc(h.faction)}</td>
+      <td class="left">${h.lines.length ? esc(h.lines.join(", ")) : '<span class="none">converts only</span>'}</td>
+      ${cities.map((c) => priceCell(prices[c], vols[c], best)).join("")}</tr>`;
+  }).join("");
+  $("heartTable").innerHTML = head + `<tbody>${body}</tbody>`;
+
+  // 2. refining uses, ranked by silver saved per craft
+  const lines = [...new Set(HEARTS.uses.map((u) => u.line))].sort().map((l) => [l, l]);
+  setChips($("heartLineChips"), lines, HState.lines, "h.lines", renderHearts);
+  const rows = [];
+  for (const u of HEARTS.uses) {
+    if (HState.lines.size && !HState.lines.has(u.line)) continue;
+    const raw = cheapest(u.raw, true), heart = cheapest(u.heart);
+    if (!raw || !heart) continue;
+    const saving = raw.price * u.saves - heart.price * u.hearts_needed;
+    rows.push({ u, raw, heart, saving });
+  }
+  rows.sort((a, b) => b.saving - a.saving);
+  const worthOnly = $("heartOnlyWorth").checked;
+  const shown = rows.filter((r) => !worthOnly || r.saving > 0);
+  const useHead = `<thead><tr><th class="left">Refine</th><th class="left">Line</th><th class="left">Heart</th>
+    <th>Raw saved</th><th>Heart costs</th><th>Saving / craft</th></tr></thead>`;
+  const useBody = shown.slice(0, 120).map(({ u, raw, heart, saving }) => `
+    <tr title="${esc(`${u.saves} x ${u.raw_name} @ ${fmt(raw.price)} (${raw.city}) vs ${u.hearts_needed} x ${u.heart_name} @ ${fmt(heart.price)} (${heart.city})`)}">
+      <td class="left"><div class="item">${iconImg(u.refined)}
+        <span class="tier">${u.tier}.${u.enchant}</span><span class="name">${esc(u.refined_name)}</span></div></td>
+      <td class="left">${esc(u.line)}</td>
+      <td class="left">${esc(u.heart_name)}</td>
+      <td class="num">${fmt(raw.price * u.saves)} <span class="q">${esc(raw.city)}</span></td>
+      <td class="num">${fmt(heart.price * u.hearts_needed)} <span class="q">${esc(heart.city)}</span></td>
+      <td class="num ${saving > 0 ? "profit" : "loss"}">${saving > 0 ? "+" : ""}${fmt(saving)}</td>
+    </tr>`).join("");
+  $("heartUseTable").innerHTML = useHead + `<tbody>${useBody || `<tr><td class="left none" colspan="99">${
+    worthOnly ? "No refine is worth a heart at current prices — hearts cost more than the raw they replace." : "No fresh prices for these lines."}</td></tr>`}</tbody>`;
+
+  // 3. Shadowheart conversion
+  $("convFee").textContent = fmt(HEARTS.conversion_silver) + " silver";
+  const shadow = cheapest(HEARTS.shadowheart);
+  const convHead = `<thead><tr><th class="left">Heart</th><th>Buy directly</th><th>Via Shadowheart</th><th>Cheaper by</th><th>Sell into buy order</th><th>Convert &amp; sell</th></tr></thead>`;
+  const convBody = HEARTS.hearts.filter((h) => h.id !== HEARTS.shadowheart).map((h) => {
+    const direct = cheapest(h.id), bid = bestBid(h.id);
+    const via = shadow ? shadow.price + HEARTS.conversion_silver : null;
+    const better = direct && via ? direct.price - via : null;
+    const flip = via && bid ? sellNet(bid.price, false) - via : null;
+    return `<tr>
+      <td class="left">${esc(h.name)}</td>
+      <td class="num">${direct ? `${fmt(direct.price)} <span class="q">${esc(direct.city)}</span>` : '<span class="none">–</span>'}</td>
+      <td class="num">${via ? fmt(via) : '<span class="none">no Shadowheart listed</span>'}</td>
+      <td class="num ${better > 0 ? "profit" : ""}">${better == null ? "–" : (better > 0 ? "+" + fmt(better) : fmt(better))}</td>
+      <td class="num">${bid ? `${fmt(bid.price)} <span class="q">${esc(bid.city)}</span>` : '<span class="none">–</span>'}</td>
+      <td class="num ${flip > 0 ? "profit" : "loss"}">${flip == null ? "–" : (flip > 0 ? "+" + fmt(flip) : fmt(flip))}</td>
+    </tr>`;
+  }).join("");
+  $("heartConvTable").innerHTML = convHead + `<tbody>${convBody}</tbody>`;
+
+  renderTransports();
+
+  $("heartMeta").innerHTML = `Prices ${new Date(HEARTS.fetched_at * 1000).toLocaleTimeString()}${warn(HEARTS.warning)}`;
+}
+
+const heartLoad = latestOnly();
+async function loadHearts(refresh = false) {
+  const current = heartLoad();
+  $("heartRefresh").disabled = true;
+  $("heartMeta").textContent = "Loading…";
+  try {
+    const data = await getJSON("/api/hearts" + (refresh ? "?refresh=1" : ""));
+    if (!current()) return;
+    HEARTS = data;
+    renderHearts();
+  } catch (e) {
+    if (current()) $("heartMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  } finally {
+    if (current()) $("heartRefresh").disabled = false;
+  }
+}
+$("heartRefresh").onclick = () => loadHearts(true);
+$("heartOnlyWorth").addEventListener("input", renderHearts);
+
+/* ---------- laborers ---------- */
+let LAB = null;
+const LB = {
+  kinds: new Set(store.get("lab.kinds", [])), tiers: new Set(store.get("lab.tiers", [])),
+  sort: validSort(store.get("lab.sort", { key: "profit", dir: -1 }), "profit"),
+};
+
+// Net silver for one unit of an item after fees, at the best city: {net, city} or null.
+// "average" values a unit at its 7-day traded price, listed as a sell order: laborer returns
+// arrive daily and are sold over time, so that is the fair value and needs no fresh quote.
+function labSale(id) {
+  const mode = $("labSell").value;
+  const cities = new Set([...Object.keys(LAB.prices[id] || {}), ...Object.keys(LAB.volumes[id] || {})]);
+  let best = null;
+  for (const city of cities) {
+    const p = LAB.prices[id]?.[city] || {}, avg = LAB.volumes[id]?.[city]?.avg;
+    let gross = null, viaOrder = true;
+    if (mode === "average") gross = avg || null;
+    else if (mode === "order" && p.sell && fresh(p.sell_at)) gross = avg ? Math.min(p.sell, avg) : p.sell;
+    else if (mode === "instant" && p.buy && fresh(p.buy_at)) { gross = p.buy; viaOrder = false; }
+    if (gross && (!best || sellNet(gross, viaOrder) > best.net)) best = { net: sellNet(gross, viaOrder), city };
+  }
+  return best;
+}
+function labAsk(id) {
+  let best = null;
+  for (const [city, p] of Object.entries(LAB.prices[id] || {})) {
+    if (p.sell && fresh(p.sell_at) && (!best || p.sell < best.price)) best = { price: p.sell, city };
+  }
+  return best;
+}
+
+function labHappiness() {
+  const f = LAB.furniture;
+  const bed = f.beds[$("labBed").value]?.happiness || 0, table = f.tables[$("labTable").value]?.happiness || 0;
+  const points = bed + table + Math.max(0, +$("labTrophy").value || 0);
+  const cfg = LAB.settings;
+  return { points, yield: Math.max(0, Math.min(cfg.max_yield, points / cfg.full_yield_points)) };
+}
+
+function labRow(job, yieldMult) {
+  const units = job.base * yieldMult, lines = [];
+  let value = 0, unpriced = 0;
+  for (const [id, amount, share] of job.loot) {
+    const n = units * share * amount, sale = labSale(id);
+    if (!sale) { if (share > 0.01) unpriced += share; continue; }  // ignore rare enchant rolls with no price
+    value += n * sale.net;
+    if (share > 0.01) lines.push(`${n.toFixed(1)} × ${LAB.names[id] || id} @ ${fmt(sale.net)} net (${sale.city})`);
+  }
+  if (job.silver) { value += units * job.silver; lines.push(`${fmt(units * job.silver)} silver`); }
+
+  const buying = $("labCost").value === "buy";
+  const full = labAsk(job.full), emptyAsk = labAsk(job.empty);
+  const emptyCost = Math.min(job.empty_silver || Infinity, emptyAsk?.price ?? Infinity);
+  const cost = buying ? full?.price ?? null : (isFinite(emptyCost) ? emptyCost : null);
+  const complete = unpriced < 0.05;  // at least 95% of the loot is priced
+  const profit = complete && cost != null ? value - cost : null;
+  const fullBid = Object.entries(LAB.prices[job.full] || {})
+    .filter(([, p]) => p.buy && fresh(p.buy_at)).sort((a, b) => b[1].buy - a[1].buy)[0];
+  const sellFull = fullBid ? { net: sellNet(fullBid[1].buy, false) } : null;
+  lines.push(buying ? `Full journal: ${full ? fmt(full.price) + " (" + full.city + ")" : "no listing"}`
+    : `Empty journal: ${fmt(emptyCost)}${emptyAsk && emptyAsk.price < job.empty_silver ? " (market)" : " (NPC)"} · ${fmt(job.fame)} fame to fill`);
+  return {
+    job, units, value, cost, profit, complete, tip: lines.join("\n"),
+    roi: profit != null && cost ? profit / cost : null,
+    perFame: !buying && profit != null && job.fame ? profit / job.fame * 1000 : null,
+    sellFull: sellFull ? sellFull.net : null,
+    useVsSell: complete && sellFull ? value - sellFull.net : null,
+  };
+}
+
+const LCOLS = [
+  { key: "laborer", label: "Laborer", left: true, text: true, sort: (x) => x.job.laborer + x.job.tier },
+  { key: "returns", label: "Returns", left: true },
+  { key: "value", label: "Returns worth", sort: (x) => x.value },
+  { key: "cost", label: "Journal cost", sort: (x) => x.cost ?? -1 },
+  { key: "profit", label: "Profit / journal", sort: (x) => x.profit ?? -Infinity },
+  { key: "roi", label: "ROI", sort: (x) => x.roi ?? -Infinity },
+  { key: "perFame", label: "Silver / 1k fame", sort: (x) => x.perFame ?? -Infinity },
+  { key: "useVsSell", label: "Use vs sell full", sort: (x) => x.useVsSell ?? -Infinity },
+];
+
+function renderLaborers() {
+  if (!LAB) return;
+  const h = labHappiness();
+  $("labHappy").innerHTML = `Happiness <b>${fmt(h.points)}</b> → yield <b>${pct(h.yield)}</b>`;
+  $("labFullPts").textContent = fmt(LAB.settings.full_yield_points);
+  $("labMaxYield").textContent = pct(LAB.settings.max_yield);
+  const kinds = [...new Set(LAB.jobs.filter((j) => j.trophy === $("labTrophies").checked).map((j) => j.laborer))]
+    .sort().map((k) => [k, k]);
+  setChips($("labKindChips"), kinds, LB.kinds, "lab.kinds", renderLaborers);
+  setChips($("labTierChips"), TIER_OPTS.slice(1), LB.tiers, "lab.tiers", renderLaborers);
+
+  const trophies = $("labTrophies").checked;
+  const rows = LAB.jobs
+    .filter((j) => j.trophy === trophies)
+    .filter((j) => (!LB.kinds.size || LB.kinds.has(j.laborer)) && (!LB.tiers.size || LB.tiers.has(String(j.tier))))
+    .map((j) => labRow(j, h.yield));
+  const col = sortedBy(LCOLS, LB, "profit");
+  rows.sort(comparator(col, LB, (a, b) => cmpVal(a.job.id, b.job.id)));
+
+  const signed = (v, cls = true) => v == null ? '<span class="none">–</span>'
+    : `<span class="${cls ? (v >= 0 ? "profit" : "loss") : ""}">${v >= 0 ? "+" : ""}${fmt(v)}</span>`;
+  const body = rows.map((x) => {
+    const main = x.job.loot[0];
+    const returns = x.job.silver && !x.job.loot.length ? `${fmt(x.units * x.job.silver)} silver`
+      : `${x.units.toFixed(1)} × ${esc(LAB.names[main?.[0]] || main?.[0] || "?")}${x.job.loot.length > 1 ? " …" : ""}`;
+    return `<tr title="${esc(x.tip)}">
+      <td class="left"><div class="item">${iconImg(x.job.full)}
+        <span class="tier">T${x.job.tier}</span><span class="name">${esc(x.job.laborer)}</span></div></td>
+      <td class="left">${returns}</td>
+      <td class="num">${x.complete ? fmt(x.value) : '<span class="none">missing prices</span>'}</td>
+      <td class="num">${x.cost != null ? fmt(x.cost) : '<span class="none">no listing</span>'}</td>
+      <td class="num">${signed(x.profit)}</td>
+      <td class="num">${x.roi != null ? pct(x.roi) : "–"}</td>
+      <td class="num">${x.perFame != null ? fmt(x.perFame) : '<span class="none">–</span>'}</td>
+      <td class="num" title="${x.sellFull ? "Selling it full nets " + fmt(x.sellFull) : "No buy order for full journals"}">${
+        x.useVsSell == null ? '<span class="none">–</span>' : x.useVsSell >= 0 ? `<span class="profit">use +${fmt(x.useVsSell)}</span>` : `<span class="loss">sell +${fmt(-x.useVsSell)}</span>`}</td>
+    </tr>`;
+  }).join("");
+  $("labTable2").innerHTML = sortHead(LCOLS, LB, col) + `<tbody>${body || `<tr><td class="left none" colspan="99">No journals match these filters.</td></tr>`}</tbody>`;
+  $("labMeta").innerHTML = `${rows.length} journals · prices ${new Date(LAB.fetched_at * 1000).toLocaleTimeString()}${warn(LAB.warning)}`;
+}
+bindSort($("labTable2"), LCOLS, LB, "lab.sort", renderLaborers);
+
+const labLoad = latestOnly();
+async function loadLaborers(refresh = false) {
+  const current = labLoad();
+  $("labRefresh").disabled = true;
+  $("labMeta").textContent = "Loading…";
+  try {
+    const data = await getJSON("/api/laborers" + (refresh ? "?refresh=1" : ""));
+    if (!current()) return;
+    const first = !LAB;
+    LAB = data;
+    if (first) {
+      const opts = (m) => Object.entries(m).map(([t, v]) => `<option value="${t}">T${t} (+${fmt(v.happiness)})</option>`).join("");
+      $("labBed").innerHTML = opts(LAB.furniture.beds);
+      $("labTable").innerHTML = opts(LAB.furniture.tables);
+      const tiers = Object.keys(LAB.furniture.beds);
+      for (const [id, def] of [["labBed", tiers.at(-1)], ["labTable", tiers.at(-1)]]) {
+        const v = store.get("lab." + id, def);
+        $(id).value = tiers.includes(v) ? v : def;
+      }
+      $("labTrophy").value = store.get("lab.labTrophy", "0");
+    }
+    renderLaborers();
+  } catch (e) {
+    if (current()) $("labMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  } finally {
+    if (current()) $("labRefresh").disabled = false;
+  }
+}
+for (const id of ["labBed", "labTable", "labTrophy", "labCost", "labSell", "labTrophies"]) {
+  $(id).addEventListener("input", () => {
+    if (["labBed", "labTable", "labTrophy"].includes(id)) store.set("lab." + id, $(id).value);
+    renderLaborers();
+  });
+}
+$("labRefresh").onclick = () => loadLaborers(true);
+
+/* ---------- farming ---------- */
+let FARM = null;
+const farmLoad = latestOnly();
+async function loadFarming(refresh = false) {
+  if (!CFG) return;
+  const current = farmLoad();
+  $("farmRefresh").disabled = true;
+  $("farmMeta").textContent = "Loading…";
+  const q = new URLSearchParams({ premium: S.premium ? 1 : 0, water: $("farmWater").checked ? 1 : 0,
+    feed_focus: $("farmFeed").checked ? 1 : 0, max_age: S.maxAge });
+  if (refresh) q.set("refresh", 1);
+  try {
+    const data = await getJSON("/api/farming?" + q);
+    if (!current()) return;
+    FARM = data;
+    renderFarming();
+  } catch (e) {
+    if (current()) $("farmMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  } finally {
+    if (current()) $("farmRefresh").disabled = false;
+  }
+}
+
+function renderFarming() {
+  if (!FARM) return;
+  const money = (v) => v == null ? '<span class="none">–</span>' : `<span class="${v >= 0 ? "profit" : "loss"}">${v >= 0 ? "+" : ""}${fmt(v)}</span>`;
+  const byProfit = (a, b) => (b.result?.profit ?? -Infinity) - (a.result?.profit ?? -Infinity) || cmpVal(a.id, b.id);
+  const plants = [...FARM.plants].sort(byProfit).map((p) => {
+    const r = p.result;
+    return `<tr><td class="left"><div class="item">${iconImg(p.crop)}
+        <span class="tier">T${p.tier}</span><span class="name">${esc(p.crop_name)}</span></div></td>
+      <td class="left">${esc(p.kind)}</td>
+      <td class="num">${r ? r.harvest.toFixed(1) : "–"}</td>
+      <td class="num">${r ? pct(r.seeds_back) : "–"}</td>
+      <td class="num">${r ? fmt(r.revenue) : '<span class="none">no price</span>'}</td>
+      <td class="num">${r ? fmt(r.cost) : "–"}</td>
+      <td class="num">${money(r?.profit)}</td>
+      <td class="num">${r ? r.focus_value.toFixed(1) : "–"}</td></tr>`;
+  }).join("");
+  $("farmPlants").innerHTML = `<thead><tr><th class="left">Crop</th><th class="left">Type</th><th>Harvest</th><th>Seeds back</th>
+    <th>Revenue</th><th>Seed cost</th><th>Profit / plot / day</th><th>Silver / focus</th></tr></thead><tbody>${plants}</tbody>`;
+  const animals = [...FARM.animals].sort(byProfit).map((a) => {
+    const r = a.result;
+    return `<tr title="${r ? esc(`Feed: ${fmt(r.feed_cost)} of ${r.feed}; focus used ${fmt(r.focus)}`) : ""}">
+      <td class="left"><div class="item">${iconImg(a.grown)}
+        <span class="tier">T${a.tier}</span><span class="name">${esc(a.grown_name)}</span></div></td>
+      <td class="num">${a.days.toFixed(1)}d</td>
+      <td class="num">${r ? pct(r.offspring) : "–"}</td>
+      <td class="num">${r ? fmt(r.feed_cost) : "–"}</td>
+      <td class="num">${r ? fmt(r.revenue) : '<span class="none">no price</span>'}</td>
+      <td class="num">${r ? fmt(r.cost) : "–"}</td>
+      <td class="num">${money(r?.profit)}</td>
+      <td class="num">${r ? money(r.profit / a.days) : "–"}</td>
+      <td class="num">${r ? r.focus_value.toFixed(1) : "–"}</td></tr>`;
+  }).join("");
+  $("farmAnimals").innerHTML = `<thead><tr><th class="left">Animal</th><th>Grows</th><th>Offspring</th><th>Feed</th>
+    <th>Revenue</th><th>Cost</th><th>Profit</th><th>Profit / day</th><th>Silver / focus</th></tr></thead><tbody>${animals}</tbody>`;
+  $("farmMeta").innerHTML = `Prices ${new Date(FARM.fetched_at * 1000).toLocaleTimeString()}${warn(FARM.warning)}`;
+}
+$("farmRefresh").onclick = () => loadFarming(true);
+for (const id of ["farmWater", "farmFeed"]) $(id).addEventListener("input", () => loadFarming());
+
+/* ---------- focus planner ---------- */
+const FOCUS_INPUTS = { fDaily: 10000, fReduction: 0, fFee: 300, fFarm: 0, fPasture: 0 };
+let focusPoll = null;
+const focusLoad = latestOnly();
+
+async function loadFocus() {
+  if (!CFG) return;
+  const current = focusLoad();
+  const q = new URLSearchParams({ premium: S.premium ? 1 : 0, max_age: S.maxAge,
+    daily: $("fDaily").value, reduction: $("fReduction").value, station_fee: $("fFee").value,
+    farm_slots: $("fFarm").value, pasture_slots: $("fPasture").value });
+  try {
+    const data = await getJSON("/api/focus?" + q);
+    if (!current()) return;
+    renderFocus(data);
+    clearTimeout(focusPoll);
+    if (data.running) focusPoll = setTimeout(loadFocus, 1500);
+  } catch (e) {
+    if (current()) $("fMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  }
+}
+
+function renderFocus(d) {
+  $("fScan").disabled = d.running;
+  if (d.running) $("fMeta").textContent = `Fetching market data… ${d.progress}`;
+  else if (d.error) $("fMeta").innerHTML = `<span class="error">Refresh failed: ${esc(d.error)}</span>`;
+  if (!d.ready) {
+    $("fPlanSummary").textContent = d.running ? "Fetching prices for ~8,000 items; this takes about a minute." : "Press Refresh market data to price every refine, craft, crop and animal.";
+    $("fPlan").innerHTML = $("fUses").innerHTML = "";
+    return;
+  }
+  if (!d.running && !d.error) $("fMeta").textContent = `Market data ${new Date(d.fetched_at * 1000).toLocaleTimeString()} · ${d.count.toLocaleString()} focus uses priced`;
+  const where = (u) => u.kind === "Breed" ? `${esc(u.where)} · ${u.days.toFixed(1)}d` : esc(u.where);
+  const item = (u) => `<div class="item">${iconImg(u.id)}
+    <span class="tier">${u.tier}.${u.enchant}</span><span class="name">${esc(u.name)}</span></div>`;
+  const p = d.plan;
+  $("fPlanSummary").innerHTML = p.steps.length
+    ? `Spend <b>${fmt(p.focus_used)}</b> of ${fmt(+$("fDaily").value)} focus for about <b class="profit">+${fmt(p.silver)}</b> silver more than without focus.`
+    : "Nothing in the plan: either no use has known market volume, or enter free farm/pasture slots.";
+  $("fPlan").innerHTML = p.steps.length ? `<thead><tr><th class="left">Do</th><th class="left">Item</th><th class="left">Where</th>
+      <th>Times</th><th>Focus</th><th>Silver added</th></tr></thead><tbody>${p.steps.map((s) => `<tr>
+      <td class="left">${esc(s.kind)}</td><td class="left">${item(s)}</td><td class="left">${where(s)}</td>
+      <td class="num">${fmt(s.times)}</td><td class="num">${fmt(s.focus_used)}</td>
+      <td class="num profit">+${fmt(s.silver)}</td></tr>`).join("")}</tbody>` : "";
+  $("fUses").innerHTML = `<thead><tr><th class="left">Do</th><th class="left">Item</th><th class="left">Where</th>
+      <th>Silver / focus</th><th>Focus each</th><th>Focus adds</th><th>Profit with focus</th><th>Without</th><th>Max / day</th></tr></thead>
+    <tbody>${d.uses.map((u) => `<tr>
+      <td class="left">${esc(u.kind)}</td><td class="left">${item(u)}</td><td class="left">${where(u)}</td>
+      <td class="num profit">${u.per_focus.toFixed(1)}</td><td class="num">${fmt(u.focus)}</td>
+      <td class="num">+${fmt(u.gain)}</td><td class="num">${fmt(u.profit_with)}</td>
+      <td class="num ${u.profit_without < 0 ? "loss" : ""}">${fmt(u.profit_without)}</td>
+      <td class="num">${u.daily_cap ?? '<span class="none">slots</span>'}</td></tr>`).join("")}</tbody>`;
+}
+
+$("fScan").onclick = async () => {
+  $("fScan").disabled = true;
+  try { await fetch("/api/focus/scan", { method: "POST" }); } catch {}
+  loadFocus();
+};
+let focusTimer = null;
+for (const id of Object.keys(FOCUS_INPUTS)) {
+  $(id).addEventListener("input", () => {
+    store.set("f." + id, $(id).value);
+    clearTimeout(focusTimer);
+    focusTimer = setTimeout(loadFocus, 250);
+  });
+}
+
+/* ---------- faction transports ---------- */
+const TR = { sizes: new Set(store.get("tr.sizes", [])) };
+const HOME_CITY = { Swamp: "Thetford", Forest: "Lymhurst", Steppe: "Bridgewatch", Highland: "Martlock",
+                    Mountain: "Fort Sterling", Caerleon: "Caerleon" };
+
+// A heart at what it would sell for: best 7-day average listed as a sell order, else the
+// cheapest fresh ask (what replacing it would cost).
+function heartValue(id) {
+  const avgs = Object.values(HEARTS.volumes[id] || {}).map((v) => v.avg).filter(Boolean);
+  if (avgs.length) return sellNet(Math.max(...avgs), true);
+  return cheapest(id)?.price ?? null;
+}
+
+function renderTransports() {
+  if (!HEARTS?.transports) return;
+  const sel = $("trFaction");
+  if (sel.options.length === 1) {
+    for (const f of Object.keys(HOME_CITY)) sel.add(new Option(`${HOME_CITY[f]} (${f})`, f));
+    sel.value = store.get("tr.faction", "");
+  }
+  setChips($("trSizeChips"), ["Light", "Medium", "Heavy"].map((x) => [x, x]), TR.sizes, "tr.sizes", renderTransports);
+  const mine = sel.value, noRed = $("trNoRed").checked;
+  const name = (id) => HEARTS.hearts.find((h) => h.id === id)?.name || id;
+  const rows = [];
+  for (const r of HEARTS.transports) {
+    if (mine && r.from !== mine) continue;
+    if (noRed && (r.risk.red || r.risk.black)) continue;
+    const pay = heartValue(r.pay), get = heartValue(r.get);
+    for (const size of ["Light", "Medium", "Heavy"]) {
+      if (TR.sizes.size && !TR.sizes.has(size)) continue;
+      const best = r.missions.filter((m) => m.size === size).sort((a, b) => b.reward - a.reward)[0];
+      if (!best) continue;
+      const profit = pay != null && get != null ? best.reward * get - best.cost * pay : null;
+      rows.push({ r, size, best, pay, get, profit });
+    }
+  }
+  rows.sort((a, b) => (b.profit ?? -Infinity) - (a.profit ?? -Infinity) || a.r.hops - b.r.hops);
+  const riskPills = (risk) => ["black", "red", "yellow", "safe"].filter((k) => risk[k])
+    .map((k) => `<span class="pill ${k === "safe" ? "none" : k === "yellow" ? "mists" : "red"}">${risk[k]} ${k}</span>`).join("");
+  const body = rows.map(({ r, size, best, pay, get, profit }) => {
+    const pack = HEARTS.packs[size] || {};
+    const tip = `${r.path.join(" → ")}\n${size} pack: ${fmt(pack.weight)} kg; if you die you drop ${pack.drop} hearts\nMission ${best.mission} (${best.min}-${best.max} zones, ${best.hours}h to complete)`;
+    return `<tr title="${esc(tip)}">
+      <td class="left">${esc(HOME_CITY[r.from])}</td>
+      <td class="left">${esc(HOME_CITY[r.to])} <span class="q">agent in ${esc(r.agent_zone)}</span></td>
+      <td class="num">${r.hops}</td>
+      <td class="left">${riskPills(r.risk)}</td>
+      <td class="left">${size}</td>
+      <td class="num">${best.cost} × ${esc(name(r.pay))}${pay != null ? ` <span class="q">${short(best.cost * pay)}</span>` : ""}</td>
+      <td class="num">${best.reward} × ${esc(name(r.get))}${get != null ? ` <span class="q">${short(best.reward * get)}</span>` : ""}</td>
+      <td class="num">${profit == null ? '<span class="none">no price</span>' : `<span class="${profit >= 0 ? "profit" : "loss"}">${profit >= 0 ? "+" : ""}${fmt(profit)}</span>`}</td>
+      <td class="num">${profit == null ? "–" : fmt(profit / (2 * r.hops))}</td>
+    </tr>`;
+  }).join("");
+  $("trTable").innerHTML = `<thead><tr><th class="left">From</th><th class="left">To</th><th>Zones</th><th class="left">Path</th>
+    <th class="left">Pack</th><th>You pay</th><th>You get</th><th>Profit</th><th>Per zone travelled</th></tr></thead>
+    <tbody>${body || `<tr><td class="left none" colspan="99">No route matches these filters.</td></tr>`}</tbody>`;
+}
+$("trFaction").addEventListener("input", () => { store.set("tr.faction", $("trFaction").value); renderTransports(); });
+$("trNoRed").addEventListener("input", renderTransports);
+
+/* ---------- gold ---------- */
+let GOLD = null;
+const G = { range: store.get("g.range", "7") };
+const GOLD_RANGES = [["1", "1 day"], ["7", "1 week"], ["30", "1 month"]];
+const signed = (x) => x == null ? "–" : `<span class="${x >= 0 ? "up" : "down"}">${x >= 0 ? "+" : ""}${pct1(x)}</span>`;
+const goldLoad = latestOnly();
+
+async function loadGold() {
+  const current = goldLoad();
+  try {
+    const data = await getJSON("/api/gold");
+    if (!current()) return;
+    GOLD = data;
+    renderGold();
+  } catch (e) {
+    if (current()) $("goldMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  }
+}
+
+function renderGold() {
+  chips($("goldRange"), GOLD_RANGES, (v) => v === G.range, (v) => { G.range = v; store.set("g.range", v); renderGold(); });
+  const s = GOLD?.summary;
+  if (!s) { $("goldTiles").innerHTML = ""; $("goldChart").innerHTML = '<p class="empty-state">No gold data.</p>'; return; }
+  $("goldMeta").innerHTML = `Newest point ${ageTxt(s.at)} ago${warn(GOLD.warning)}`;
+  const tile = (k, v, d = "") => `<div class="tile"><div class="k">${k}</div><div class="v num">${v}</div><div class="d">${d}</div></div>`;
+  $("goldTiles").innerHTML = tile("1 gold", fmt(s.price) + " silver", `${signed(s.change_24h)} in 24h`)
+    + tile("7-day change", signed(s.change_7d))
+    + tile("7-day range", `${fmt(s.low_7d)} – ${fmt(s.high_7d)}`)
+    + tile("7-day average", fmt(s.avg_7d))
+    + tile(`${Math.round(s.days)}-day average`, fmt(s.avg_all));
+  const from = s.at - +G.range * 86400;
+  lineChart($("goldChart"), GOLD.points.filter(([t]) => t >= from), "Gold price in silver",
+    ([t, v]) => `<b class="num">${fmt(v)}</b> silver · ${new Date(t * 1000).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`);
+  convertGold();
+}
+
+// Single-series line of [time, value, ...] points with a crosshair tooltip (tip(point) -> html).
+// The y axis is fitted to the data, not zero: the story is movement of a few percent.
+function lineChart(el, pts, title, tip) {
+  const W = Math.max(320, el.clientWidth - 8), H = 280, L = 56, R = 12, T = 12, B = 26;
+  if (pts.length < 2) { el.innerHTML = '<p class="empty-state">Not enough points in this range.</p>'; return; }
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0];
+  let lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1]));
+  const pad = Math.max(1, (hi - lo) * 0.1); lo -= pad; hi += pad;
+  const x = (t) => L + (t - t0) / (t1 - t0) * (W - L - R);
+  const y = (v) => T + (hi - v) / (hi - lo) * (H - T - B);
+  const grid = [0, 1, 2, 3].map((i) => {
+    const v = lo + (hi - lo) * i / 3;
+    return `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
+  }).join("");
+  const hourly = t1 - t0 <= 2 * 86400;
+  const label = (t) => new Date(t * 1000).toLocaleString("en-GB", hourly ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short" });
+  const ticks = timeTicks(t0, t1).map((t) => {
+    const at = x(t), anchor = at < L + 30 ? "start" : at > W - R - 30 ? "end" : "middle";
+    return `<text class="axis" x="${at}" y="${H - 6}" text-anchor="${anchor}">${label(t)}</text>`;
+  }).join("");
+  const path = pts.map(([t, v], i) => `${i ? "L" : "M"}${x(t).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${grid}${ticks}
+    <path class="line" d="${path}"/><line class="cross hidden" y1="${T}" y2="${H - B}"/><circle class="mark hidden" r="4"/></svg>
+    <div class="tip hidden"></div>`;
+  const svg = el.querySelector("svg"), cross = svg.querySelector(".cross"), mark = svg.querySelector(".mark"), tipEl = el.querySelector(".tip");
+  svg.onpointermove = (e) => {
+    const box = svg.getBoundingClientRect();
+    const t = t0 + ((e.clientX - box.left) * W / box.width - L) / (W - L - R) * (t1 - t0);
+    const point = pts.reduce((a, b) => Math.abs(b[0] - t) < Math.abs(a[0] - t) ? b : a);
+    const [pt, pv] = point;
+    cross.setAttribute("x1", x(pt)); cross.setAttribute("x2", x(pt));
+    mark.setAttribute("cx", x(pt)); mark.setAttribute("cy", y(pv));
+    tipEl.innerHTML = tip(point);
+    const px = x(pt) * box.width / W;
+    tipEl.style.left = Math.min(px + 12, box.width - tipEl.offsetWidth) + "px";
+    tipEl.style.top = "8px";
+    for (const n of [cross, mark, tipEl]) n.classList.remove("hidden");
+  };
+  svg.onpointerleave = () => { for (const n of [cross, mark, tipEl]) n.classList.add("hidden"); };
+}
+
+// Ticks on local midnights (every few days so at most ~7), or every 6 hours for short ranges.
+function timeTicks(t0, t1) {
+  const hours = (t1 - t0) / 3600;
+  const step = hours <= 48 ? 6 : Math.ceil(hours / 24 / 7) * 24;
+  const d = new Date(t0 * 1000);
+  d.setMinutes(0, 0, 0);
+  d.setHours(step >= 24 ? 0 : Math.floor(d.getHours() / step) * step);
+  const out = [];
+  for (; d.getTime() / 1000 <= t1; d.setHours(d.getHours() + step)) {
+    if (d.getTime() / 1000 >= t0) out.push(d.getTime() / 1000);
+  }
+  return out;
+}
+
+function convertGold() {
+  const price = GOLD?.summary?.price;
+  $("goldToSilver").textContent = price ? fmt(+$("goldAmt").value * price) : "–";
+  $("silverToGold").textContent = price ? (+$("silverAmt").value / price).toFixed(1) : "–";
+}
+$("goldAmt").value = store.get("g.gold", 100);
+$("silverAmt").value = store.get("g.silver", 1000000);
+for (const id of ["goldAmt", "silverAmt"]) $(id).addEventListener("input", () => {
+  store.set(id === "goldAmt" ? "g.gold" : "g.silver", +$(id).value || 0);
+  convertGold();
+});
+window.addEventListener("resize", () => { if (S.tab === "gold" && GOLD) renderGold(); });
+
+/* ---------- killboard (shared event rendering) ---------- */
+const GEAR_SLOTS = ["MainHand", "OffHand", "Head", "Armor", "Shoes", "Cape"];
+const itemName = (names, id) => names[id] || id;
+
+function gearIcons(p, names) {
+  return `<div class="gear">${GEAR_SLOTS.map((slot) => {
+    const g = p.gear[slot];
+    return g ? iconImg(g[0], itemName(names, g[0]) + (g[2] > 1 ? " · " + CFG.quality_names[g[2]] : "")) : '<span class="empty"></span>';
+  }).join("")}</div>`;
+}
+function whoCell(p) {
+  const guild = [p.guild, p.alliance && `[${p.alliance}]`].filter(Boolean).join(" ");
+  return `<td class="who"><a data-player="${esc(p.id)}">${esc(p.name)}</a> <span class="sub num">${p.ip ? fmt(p.ip) + " IP" : ""}</span>
+    <div class="sub">${p.guild_id ? `<a class="quiet" data-guild="${esc(p.guild_id)}">${esc(guild)}</a>` : esc(guild)}</div></td>`;
+}
+function eventRows(events, names) {
+  return events.map((e) => {
+    const inv = e.victim.inventory || [];
+    const bag = inv.length ? `<span class="inv" title="${esc(inv.map(([id, n]) => `${n}× ${itemName(names, id)}`).join("\n"))}">bag ${inv.length}</span>` : "";
+    return `<tr><td class="left num" title="${esc(new Date(e.at * 1000).toLocaleString())}">${ageTxt(e.at)}</td>
+      ${whoCell(e.killer)}<td class="left">${gearIcons(e.killer, names)}</td>
+      ${whoCell(e.victim)}<td class="left">${gearIcons(e.victim, names)}</td>
+      <td class="left">${bag}</td>
+      <td class="num">${fmt(e.fame)}</td><td class="num">${e.participants || "–"}</td></tr>`;
+  }).join("");
+}
+const EVENT_HEAD = `<thead><tr><th class="left">When</th><th class="left">Killer</th><th class="left">Gear</th>
+  <th class="left">Victim</th><th class="left">Gear</th><th class="left">Carried</th><th>Fame</th><th>Party</th></tr></thead>`;
+// Clicking a name anywhere in an event table opens that player or guild.
+function bindWho(el) {
+  el.addEventListener("click", (e) => {
+    const a = e.target.closest("a[data-player], a[data-guild]"); if (!a) return;
+    openIntel(a.dataset.player ? "p:" + a.dataset.player : "g:" + a.dataset.guild);
+  });
+}
+
+let KILLS = null, killPoll = null;
+const killLoad = latestOnly();
+async function loadKills() {
+  const current = killLoad();
+  clearTimeout(killPoll);
+  try {
+    const data = await getJSON("/api/killboard");
+    if (!current()) return;
+    KILLS = data;
+    renderKills();
+  } catch (e) {
+    if (current()) $("kMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  }
+  if (S.tab === "kills") killPoll = setTimeout(loadKills, 30000);
+}
+function renderKills() {
+  if (!KILLS) return;
+  const q = $("kSearch").value.trim().toLowerCase(), minFame = +$("kMinFame").value || 0;
+  const hit = (p) => [p.name, p.guild, p.alliance].some((v) => v.toLowerCase().includes(q));
+  const shown = KILLS.events.filter((e) => e.fame >= minFame && (!q || hit(e.killer) || hit(e.victim))).slice(0, 200);
+  const status = KILLS.failing ? '<span class="error">The kill feed is failing; retrying every 30 s</span>'
+    : KILLS.polled_at ? `Checked ${ageTxt(KILLS.polled_at)} ago` : "Waiting for the first poll…";
+  $("kMeta").innerHTML = `${fmt(shown.length)} of ${fmt(KILLS.events.length)} kills · ${status}`;
+  $("kTable").innerHTML = EVENT_HEAD + `<tbody>${eventRows(shown, KILLS.names)
+    || '<tr><td class="left none" colspan="99">No kills match.</td></tr>'}</tbody>`;
+}
+$("kMinFame").value = store.get("k.minFame", 0);
+$("kSearch").addEventListener("input", renderKills);
+$("kMinFame").addEventListener("input", () => { store.set("k.minFame", +$("kMinFame").value || 0); renderKills(); });
+bindWho($("kTable"));
+
+/* ---------- players & guilds ---------- */
+// P.target is "p:<player id>" or "g:<guild id>", and is carried in the URL hash.
+const P = { target: (HASH_TAB === "players" && HASH_VALUE) || store.get("p.target", ""), results: { players: [], guilds: [] } };
+const intelLoad = latestOnly(), intelSearch = latestOnly();
+
+function openIntel(target) {
+  P.target = target; store.set("p.target", target);
+  setTab("players");
+  loadIntel();
+}
+
+async function runIntelSearch() {
+  const current = intelSearch();
+  const q = $("pSearch").value.trim();
+  if (q.length < 3) { P.results = { players: [], guilds: [] }; renderIntelResults(); return; }
+  $("pMeta").textContent = "Searching…";
+  try {
+    const data = await getJSON("/api/intel/search?q=" + encodeURIComponent(q));
+    if (!current()) return;
+    P.results = data;
+    $("pMeta").textContent = "";
+    renderIntelResults();
+  } catch (e) {
+    if (current()) $("pMeta").innerHTML = `<span class="error">Search failed: ${esc(e.message)}</span>`;
+  }
+}
+function renderIntelResults() {
+  const btn = (target, label, sub) => `<button class="result text" data-t="${esc(target)}" aria-pressed="${target === P.target}">${label} <span class="sub">${sub}</span></button>`;
+  $("pResults").innerHTML = P.results.players.map((p) => btn("p:" + p.id, esc(p.name), esc(p.guild || "no guild")))
+    .concat(P.results.guilds.map((g) => btn("g:" + g.id, "🛡 " + esc(g.name), "guild"))).join("")
+    || ($("pSearch").value.trim().length >= 3 ? '<span class="none">Nobody by that name.</span>' : "");
+}
+
+async function loadIntel() {
+  const current = intelLoad();
+  updateHash();
+  renderIntelResults();
+  if (!P.target) { $("pProfile").innerHTML = ""; return; }
+  const [kind, id] = [P.target.slice(0, 1), P.target.slice(2)];
+  $("pProfile").innerHTML = '<p class="meta">Loading…</p>';
+  try {
+    const data = await getJSON(`/api/${kind === "g" ? "guild" : "player"}?id=${encodeURIComponent(id)}`);
+    if (!current()) return;
+    $("pProfile").innerHTML = kind === "g" ? guildHTML(data) : playerHTML(data);
+  } catch (e) {
+    if (current()) $("pProfile").innerHTML = `<p class="error">${esc(e.message)}</p>`;
+  }
+}
+
+const statTile = (k, v, d = "") => `<div class="tile"><div class="k">${k}</div><div class="v num">${v}</div><div class="d">${d}</div></div>`;
+const ratio = (k, d) => d ? (k / d).toFixed(2) : k ? "∞" : "–";
+
+function playerHTML(d) {
+  const p = d.player, life = p.lifetime;
+  const areas = Object.entries(life.pve_areas).filter(([, v]) => v).map(([a, v]) => `${a} ${short(v)}`).join(" · ");
+  const gathered = Object.entries(life.gathering_by).filter(([, v]) => v).map(([r, v]) => `${r} ${short(v)}`).join(" · ");
+  const weapons = d.weapons.map(([id, n]) => `<span class="result" title="${esc(itemName(d.names, id))}">${iconImg(id)}${esc(itemName(d.names, id))} ×${n}</span>`).join("");
+  const guild = p.guild_id ? `<a class="who quiet" data-guild="${esc(p.guild_id)}">${esc(p.guild)}</a>` : "no guild";
+  return `<div class="picked"><div><h2>${esc(p.name)}</h2><div class="sub">${guild}${p.alliance ? " · " + esc(p.alliance) : ""}</div></div></div>
+    <div class="tiles">
+      ${statTile("Kill fame", short(p.kill_fame))}${statTile("Death fame", short(p.death_fame))}
+      ${statTile("Fame ratio", ratio(p.kill_fame, p.death_fame))}
+      ${statTile("PvE fame", short(life.pve), areas)}${statTile("Gathered", short(life.gathering), gathered)}
+      ${statTile("Crafting fame", short(life.crafting))}${statTile("Fishing / farming", `${short(life.fishing)} / ${short(life.farming)}`)}
+    </div>
+    ${weapons ? `<h3 class="section-title">Weapons in recent fights</h3><div class="results">${weapons}</div>` : ""}
+    <h3 class="section-title">Recent kills</h3>
+    <div class="table-wrap"><table>${EVENT_HEAD}<tbody>${eventRows(d.kills, d.names) || '<tr><td class="left none" colspan="99">None recently.</td></tr>'}</tbody></table></div>
+    <h3 class="section-title">Recent deaths</h3>
+    <div class="table-wrap"><table>${EVENT_HEAD}<tbody>${eventRows(d.deaths, d.names) || '<tr><td class="left none" colspan="99">None recently.</td></tr>'}</tbody></table></div>`;
+}
+
+function guildHTML(g) {
+  const members = g.members.map((m) => `<tr><td class="who"><a data-player="${esc(m.id)}">${esc(m.name)}</a></td>
+    <td class="num">${short(m.kill_fame)}</td><td class="num">${short(m.death_fame)}</td><td class="num">${ratio(m.kill_fame, m.death_fame)}</td>
+    <td class="num">${short(m.pve)}</td><td class="num">${short(m.gathering)}</td><td class="num">${short(m.crafting)}</td></tr>`).join("");
+  const top = g.top.map((t) => `<a class="result text" data-player="${esc(t.id)}">${esc(t.name)} <span class="sub">${short(t.kill_fame)} · ${fmt(t.kills)} kills</span></a>`).join("");
+  return `<div class="picked"><div><h2>🛡 ${esc(g.name)}</h2><div class="sub">${g.alliance ? esc(g.alliance) + " · " : ""}founded by ${esc(g.founder || "?")}${g.founded ? " on " + esc(g.founded.slice(0, 10)) : ""}</div></div></div>
+    <div class="tiles">
+      ${statTile("Members", fmt(g.members.length))}${statTile("Kills", fmt(g.kills))}${statTile("Deaths", fmt(g.deaths))}
+      ${statTile("Kill fame", short(g.kill_fame))}${statTile("Death fame", short(g.death_fame))}${statTile("Fame ratio", ratio(g.kill_fame, g.death_fame))}
+    </div>
+    ${top ? `<h3 class="section-title">Top killers</h3><div class="results">${top}</div>` : ""}
+    <h3 class="section-title">Members</h3>
+    <div class="table-wrap"><table><thead><tr><th class="left">Player</th><th>Kill fame</th><th>Death fame</th><th>Ratio</th><th>PvE fame</th><th>Gathered</th><th>Crafting fame</th></tr></thead>
+    <tbody>${members || '<tr><td class="left none" colspan="99">No members listed.</td></tr>'}</tbody></table></div>`;
+}
+
+let intelTimer = null;
+$("pSearch").value = store.get("p.query", "");
+$("pSearch").addEventListener("input", () => {
+  store.set("p.query", $("pSearch").value);
+  clearTimeout(intelTimer);
+  intelTimer = setTimeout(runIntelSearch, 300);
+});
+$("pSearch").addEventListener("keydown", (e) => {
+  const first = P.results.players[0] ? "p:" + P.results.players[0].id : P.results.guilds[0] && "g:" + P.results.guilds[0].id;
+  if (e.key === "Enter" && first) openIntel(first);
+});
+$("pResults").onclick = (e) => { const b = e.target.closest(".result"); if (b) openIntel(b.dataset.t); };
+bindWho($("pProfile"));
+
+/* ---------- meta: builds and losses ---------- */
+let META = null;
+const M = { size: store.get("m.size", ""), days: store.get("m.days", "7") };
+const metaLoad = latestOnly();
+const SIZE_OPTS = [["", "All fights"], ["solo", "Solo"], ["small", "2–5"], ["group", "6–19"], ["zvz", "ZvZ 20+"]];
+const DAY_OPTS = [["1", "Today"], ["7", "7 days"], ["14", "14 days"]];
+const tierLabel = (id) => { const m = /^T(\d)_.*?(?:@(\d))?$/.exec(id); return m ? `${m[1]}.${m[2] || 0}` : ""; };
+
+async function loadMeta() {
+  const current = metaLoad();
+  chips($("mSize"), SIZE_OPTS, (v) => v === M.size, (v) => { M.size = v; store.set("m.size", v); loadMeta(); });
+  chips($("mDays"), DAY_OPTS, (v) => v === M.days, (v) => { M.days = v; store.set("m.days", v); loadMeta(); });
+  try {
+    const data = await getJSON(`/api/meta?days=${M.days}&size=${M.size}`);
+    if (!current()) return;
+    META = data;
+    renderMeta();
+  } catch (e) {
+    if (current()) $("mMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  }
+}
+
+function renderMeta() {
+  const d = META, line = (b) => d.lines[b] || { icon: null, name: b };
+  const share = (r) => r.kills + r.deaths ? pct(r.kills / (r.kills + r.deaths)) : "–";
+  const counts = (r) => `<td class="num">${fmt(r.seen)}</td><td class="num">${r.kills.toFixed(1)}</td><td class="num">${fmt(r.deaths)}</td><td class="num">${share(r)}</td>`;
+  const empty = (msg) => `<tr><td class="left none" colspan="99">${msg}</td></tr>`;
+  const none = "No kills collected yet. Keep the collector running.";
+  $("mMeta").innerHTML = `${fmt(d.kills)} kills over ${d.hours < 48 ? d.hours + " hours" : (d.hours / 24).toFixed(1) + " days"} collected`;
+  $("mWeapons").innerHTML = `<thead><tr><th class="left">Weapon</th><th>Seen</th><th>Kills</th><th>Deaths</th><th>Kill share</th></tr></thead><tbody>${
+    d.weapons.slice(0, 40).map((w) => { const l = line(w.weapon);
+      return `<tr><td class="left"><div class="item">${l.icon ? iconImg(l.icon) : ""}<span class="name">${esc(l.name)}</span></div></td>${counts(w)}</tr>`; }).join("") || empty(none)}</tbody>`;
+  const builds = d.builds.filter((b) => b.seen >= 3).slice(0, 30);
+  $("mBuilds").innerHTML = `<thead><tr><th class="left">Weapon · off-hand · head · armor · shoes · cape</th><th>Seen</th><th>Kills</th><th>Deaths</th><th>Kill share</th></tr></thead><tbody>${
+    builds.map((b) => `<tr><td class="left"><div class="gear">${b.build.map((s) => { const l = line(s);
+      return s && l.icon ? iconImg(l.icon, l.name) : '<span class="empty"></span>'; }).join("")}</div></td>${counts(b)}</tr>`).join("")
+    || empty(d.builds.length ? "No build seen 3 times yet." : none)}</tbody>`;
+  renderLost();
+}
+
+function renderLost() {
+  if (!META) return;
+  const q = $("mLostSearch").value.trim().toLowerCase(), perDay = META.hours >= 1 ? 24 / META.hours : null;
+  const rows = META.lost.filter((r) => !q || (META.names[r.id] || r.id).toLowerCase().includes(q) || r.id.toLowerCase().includes(q)).slice(0, 100);
+  const total = META.lost.reduce((sum, r) => sum + (r.value || 0), 0);
+  $("mLostTotal").textContent = total ? `${short(total)} silver of gear lost${perDay ? `, about ${short(total * perDay)} a day` : ""} (top ${META.lost.length} items, at Normal-quality fair prices).` : "";
+  $("mLost").innerHTML = `<thead><tr><th class="left">Item</th><th>Units lost</th><th>Per day</th><th>Silver lost</th><th>Silver / day</th></tr></thead><tbody>${
+    rows.map((r) => `<tr><td class="left"><div class="item">${iconImg(r.id)}
+      <span class="tier">${tierLabel(r.id)}</span><span class="name">${esc(META.names[r.id] || r.id)}</span></div></td>
+      <td class="num">${fmt(r.units)}</td><td class="num">${perDay ? fmt(r.units * perDay) : "–"}</td>
+      <td class="num">${r.value ? short(r.value) : '<span class="none">–</span>'}</td>
+      <td class="num">${r.value && perDay ? short(r.value * perDay) : '<span class="none">–</span>'}</td></tr>`).join("")
+    || '<tr><td class="left none" colspan="99">Nothing lost yet.</td></tr>'}</tbody>`;
+}
+$("mLostSearch").addEventListener("input", renderLost);
+
+/* ---------- background sync status ---------- */
+async function loadStatus() {
+  try {
+    const st = await getJSON("/api/status");
+    const parts = [st.prices_at ? `prices ${ageTxt(st.prices_at)}` : "prices syncing…",
+                   st.history_at ? `history ${ageTxt(st.history_at)}` : "history syncing…",
+                   st.kills_at ? `kills ${ageTxt(st.kills_at)}` : "kills waiting…"];
+    const problems = [st.collector_down && "no collector is running: start python -m silver collect (or serve)",
+                      st.sync_failing && "the market sync is failing (retried every 5 min)",
+                      st.kills_failing && "the kill feed is failing (retried every 30 s)"].filter(Boolean);
+    $("syncStatus").innerHTML = (problems.length ? '<span class="error">⚠ </span>' : "") + parts.join(" · ");
+    $("syncStatus").title = [problems.length ? problems.join("\n") : "Collection healthy",
+      st.here ? "Collecting in this process" + (st.step ? `: ${st.step}` : "") : "Collected by another process"].join("\n");
+  } catch { $("syncStatus").textContent = "Server unreachable"; }
+}
+
+/* ---------- shell ---------- */
+function setTab(tab) {
+  S.tab = tab; store.set("tab", tab); updateHash();
+  document.querySelectorAll(".tab").forEach((b) => {
+    b.setAttribute("aria-selected", b.dataset.tab === tab);
+    b.tabIndex = b.dataset.tab === tab ? 0 : -1;  // one tab stop; arrows move between tabs
+  });
+  for (const t of TABS) $("view-" + t).classList.toggle("hidden", tab !== t);
+  if (tab === "gold") loadGold();
+  if (tab === "kills") loadKills();
+  if (tab === "meta") loadMeta();
+  if (tab === "market") loadMarket();
+  if (tab === "enchant") loadEnchant();
+}
+document.querySelectorAll(".tab").forEach((b) => {
+  b.id = "tab-" + b.dataset.tab;
+  b.setAttribute("aria-controls", "view-" + b.dataset.tab);
+  const panel = $("view-" + b.dataset.tab);
+  panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-labelledby", b.id);
+  b.onclick = () => setTab(b.dataset.tab);
+});
+document.querySelector(".tabs").addEventListener("keydown", (e) => {
+  const tabs = [...document.querySelectorAll(".tab")], i = tabs.indexOf(document.activeElement);
+  const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (i < 0 || next === undefined) return;
+  e.preventDefault();
+  const t = tabs[(next + tabs.length) % tabs.length];
+  t.focus(); setTab(t.dataset.tab);
+});
+
+function renderAll() { renderResources(); renderFlips(); renderCraft(); renderLookup(); renderHearts(); renderLaborers(); loadFarming(); loadFocus(); }
+$("premium").onchange = () => { S.premium = $("premium").checked; store.set("premium", S.premium); renderAll(); if (S.tab === "enchant") loadEnchant(); };
+$("capital").oninput = () => { S.capital = +$("capital").value || 0; store.set("capital", S.capital); renderFlips(); };
+$("maxAge").onchange = () => { S.maxAge = +$("maxAge").value; store.set("maxAge", S.maxAge); renderAll(); if (S.tab === "market") loadMarket(); if (S.tab === "enchant") loadEnchant(); if ($("cMake").checked) loadCraft(); };
+$("resRefresh").onclick = () => loadResources(true);
+
+(async function init() {
+  try { CFG = await getJSON("/api/config"); }
+  catch (e) { document.querySelector("main").innerHTML = `<p class="error">Can't reach the local server: start it with <code>uv run python -m silver serve</code> and reload.</p>`; return; }
+  $("server").textContent = CFG.server + " · " + new URL(CFG.host).hostname;
+  S.premium = store.get("premium", CFG.premium);
+  S.capital = store.get("capital", CFG.capital);
+  $("premium").checked = S.premium;
+  $("capital").value = S.capital;
+  $("maxAge").value = String(S.maxAge);
+  setTab(S.tab);
+  renderFlips();
+  loadResources();
+  pollScan();
+  initCraft();
+  $("lookSearch").value = L.query;
+  if (L.query) runSearch();
+  if (L.id) loadItem();
+  loadHearts();
+  loadLaborers();
+  for (const [id, def] of Object.entries(FOCUS_INPUTS)) {
+    const v = +store.get("f." + id, String(def));
+    $(id).value = Number.isFinite(v) && v >= 0 ? v : def;
+  }
+  loadFarming();
+  loadFocus();
+  if ($("pSearch").value) runIntelSearch();
+  if (P.target) loadIntel();
+  setInterval(() => { if (S.tab === "resources") loadResources(); }, 5 * 60 * 1000);
+  loadStatus();
+  setInterval(loadStatus, 30 * 1000);
+})();
+</script>
+</body>
+</html>

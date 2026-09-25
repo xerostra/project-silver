@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Silver Toolkit</title>
+<link rel="stylesheet" href="silver.css">
+<style>
+/* Page chrome for the reference only; nothing here is part of the toolkit. */
+.kit h2 { font-size: var(--fs-lg); margin: 36px 0 var(--sp-1); }
+.kit h2:first-child { margin-top: var(--sp-2); }
+.kit .row { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; margin: var(--sp-3) 0; }
+.kit .spec { font-family: var(--mono); font-size: var(--fs-xs); color: var(--faint); }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.swatch { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+.swatch i { display: block; height: 44px; border-bottom: 1px solid var(--line); }
+.swatch div { padding: 6px 10px; font-size: var(--fs-xs); }
+.swatch .spec { display: block; }
+.scale { display: grid; grid-template-columns: 110px 1fr; gap: var(--sp-2) var(--sp-4); align-items: center; }
+.bar { height: 10px; background: var(--accent); border-radius: 2px; }
+.box { width: 56px; height: 40px; background: var(--panel-2); border: 1px solid var(--line-strong); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Silver <span>Toolkit</span></div>
+  <div class="server">web/silver.css</div>
+  <div class="settings">
+    <span>Theme</span>
+    <div class="chips" id="themeChips">
+      <button class="chip" data-theme-pick="">System</button>
+      <button class="chip" data-theme-pick="dark">Dark</button>
+      <button class="chip" data-theme-pick="light">Light</button>
+    </div>
+    <a class="btn" href="/">Dashboard</a>
+  </div>
+</header>
+
+<main class="kit">
+  <h2>Colour roles</h2>
+  <p class="hint">Use roles, never raw hex. Each tone has a <code>-bg</code> wash derived with <code>color-mix</code>, so adding a tone means one colour per theme.</p>
+  <div class="swatches" id="swatches"></div>
+
+  <h2>Type</h2>
+  <div class="scale" id="typeScale"></div>
+
+  <h2>Space and shape</h2>
+  <div class="scale" id="spaceScale"></div>
+  <div class="row" id="radii"></div>
+
+  <h2>Buttons and inputs</h2>
+  <div class="row">
+    <button class="btn primary">Scan market</button>
+    <button class="btn">Refresh</button>
+    <button class="btn" disabled>Disabled</button>
+    <input type="search" placeholder="Search item…">
+    <input type="number" value="1000" step="500">
+    <select><option>7-day average</option><option>instant sale</option></select>
+    <label><input type="checkbox" checked> Only fully priced</label>
+  </div>
+  <p class="spec">.btn · .btn.primary · native inputs are styled by type · Tab through to see the focus ring</p>
+
+  <h2>Toggles</h2>
+  <div class="row">
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true">Resources</button>
+      <button class="tab" role="tab" aria-selected="false">Market</button>
+      <button class="tab" role="tab" aria-selected="false">Flips</button>
+    </nav>
+  </div>
+  <div class="row">
+    <div class="chips"><button class="chip" aria-pressed="true">T4</button><button class="chip" aria-pressed="false">T5</button><button class="chip" aria-pressed="false">T6</button></div>
+    <div class="results">
+      <button class="result" aria-pressed="true"><img class="icon" width="28" height="28" src="/icon/T6_MAIN_SWORD.png" alt=""><span class="tier">6.0</span> Broadsword</button>
+      <button class="result text" aria-pressed="false">Guild name <span class="sub">12 members</span></button>
+    </div>
+  </div>
+  <p class="spec">.tabs &gt; .tab[aria-selected] · .chips &gt; .chip[aria-pressed] · .results &gt; .result[aria-pressed] (.result.text when there is no icon)</p>
+
+  <h2>Filter bar and summary</h2>
+  <div class="filters">
+    <label>Min profit <input type="number" value="1000"></label>
+    <label><input type="checkbox" checked> Has volume data</label>
+    <div class="chips"><button class="chip" aria-pressed="true">Instant</button><button class="chip" aria-pressed="false">Sell order</button></div>
+    <span class="meta">412 flips · 3 min ago</span>
+  </div>
+  <div class="summary">Return rate <b>36.7%</b> with focus in Martlock</div>
+  <p class="hint">A hint explains the numbers under a control bar. <b>Bold</b> marks the term being defined.</p>
+
+  <h2>Data table</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="left">Item</th><th class="left">Route</th><th class="sortable sorted" aria-sort="descending"><button class="th-sort">Profit ↓</button></th><th class="sortable"><button class="th-sort">Martlock</button></th><th>Bridgewatch</th></tr></thead>
+    <tbody>
+      <tr data-id="T6_MAIN_SWORD">
+        <td class="left"><div class="item"><img class="icon" width="32" height="32" src="/icon/T6_MAIN_SWORD.png" alt=""><span class="tier">6.1</span><span><span class="name">Master's Broadsword</span><br><span class="sub">Good</span></span></div></td>
+        <td class="left">Caerleon<span class="pill red">red</span></td>
+        <td class="num profit">+48,200</td>
+        <td><div class="cell"><span class="p ask best-ask num">112,400</span><span class="p bid num">98,000</span><span class="age"><span class="dot fresh"></span>12m</span></div></td>
+        <td><div class="cell"><span class="p ask stale num">131,000</span><span class="p bid best-bid num">121,500</span><span class="age"><span class="dot aging"></span>2h</span></div></td>
+      </tr>
+      <tr>
+        <td class="left"><div class="item"><img class="icon" width="32" height="32" src="/icon/T5_METALBAR.png" alt=""><span class="tier">5.0</span><span class="name">Titanium Steel Bar</span></div></td>
+        <td class="left">Lymhurst<span class="pill safe">safe</span></td>
+        <td class="num loss">−1,240</td>
+        <td><div class="cell"><span class="none">—</span></div></td>
+        <td><div class="cell"><span class="p ask num"><span class="listed">980</span>912</span><span class="p bid num">870</span><span class="age"><span class="dot old"></span>1d</span></div></td>
+      </tr>
+    </tbody>
+  </table></div>
+  <div class="legend">
+    <span><span class="p best-ask">1,234</span> cheapest place to buy</span>
+    <span><span class="p best-bid">1,234</span> best place to sell instantly</span>
+    <span><span class="dot fresh"></span>under 1h <span class="dot aging"></span>within max age <span class="dot old"></span>older</span>
+  </div>
+  <p class="spec">th.sortable &gt; button.th-sort (aria-sort on .sorted) · td.left · tr[data-id] is clickable · .cell &gt; .p.ask / .p.bid (+ .best-ask, .best-bid, .stale) · .dot.fresh / .aging / .old · .listed</p>
+  <p class="spec">Built in JS by sortHead() + bindSort() for headers, priceCell() + bestMarks() for market cells, chips() / setChips() for chip groups.</p>
+
+  <h2>Card with grouped list</h2>
+  <div class="card">
+    <div class="card-head">
+      <h3>Grocery list</h3>
+      <span class="meta">1 to buy · cost <b class="num">1.03m</b> · est. profit <b class="num profit">+281k</b></span>
+      <span class="actions"><button class="btn">Copy list</button><button class="btn">Clear bought</button></span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th><span class="sr-only">Bought</span></th><th class="left">Item</th><th>Qty</th><th>Cost</th><th><span class="sr-only">Remove</span></th></tr></thead>
+      <tbody>
+        <tr class="group"><th class="left" colspan="3">Buy in Caerleon</th><th class="num">1.03m</th><th></th></tr>
+        <tr><td><input type="checkbox" aria-label="Bought"></td><td class="left"><div class="item"><span class="tier">6.0</span><span class="name">Master's Shield</span></div></td>
+          <td><input type="number" class="qty" value="116" aria-label="Quantity"></td><td class="num">1.03m</td><td><button class="icon-btn" title="Remove">×</button></td></tr>
+        <tr class="done"><td><input type="checkbox" checked aria-label="Bought"></td><td class="left"><div class="item"><span class="tier">7.0</span><span class="name">Avalonian Cape</span></div></td>
+          <td><input type="number" class="qty" value="3" aria-label="Quantity"></td><td class="num">960k</td><td><button class="icon-btn" title="Remove">×</button></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="row"><button class="icon-btn" aria-pressed="false" title="Add">+</button><button class="icon-btn" aria-pressed="true" title="Added">✓</button></div>
+  <p class="spec">.card &gt; .card-head (h3, .meta, .actions) · tbody tr.group th for group headings · tr.done · input.qty · .icon-btn[aria-pressed] · .sr-only for labels only screen readers need</p>
+
+  <h2>Tags and text tones</h2>
+  <div class="row">
+    <span class="pill">plain</span><span class="pill none">no risk</span><span class="pill safe">safe</span><span class="pill mists">mists</span><span class="pill red">red</span>
+  </div>
+  <div class="row">
+    <span class="profit">profit</span><span class="loss">loss</span><span class="up">▲ up</span><span class="down">▼ down</span>
+    <span class="warn">warn</span><span class="error">error</span><span class="none">none</span><span class="q">quality</span>
+  </div>
+
+  <h2>Tiles and chart</h2>
+  <div class="tiles">
+    <div class="tile"><div class="k">Gold price</div><div class="v">4,812</div><div class="d up">+2.1% 24h</div></div>
+    <div class="tile"><div class="k">30-day low</div><div class="v">4,390</div><div class="d">Sep 3</div></div>
+    <div class="tile"><div class="k">30-day high</div><div class="v">5,020</div><div class="d down">−4.1% from high</div></div>
+  </div>
+  <div class="chart">
+    <svg viewBox="0 0 600 280" role="img" aria-label="Sample line chart">
+      <line class="grid" x1="40" x2="590" y1="40" y2="40"/><line class="grid" x1="40" x2="590" y1="140" y2="140"/><line class="grid" x1="40" x2="590" y1="240" y2="240"/>
+      <text class="axis" x="34" y="44" text-anchor="end">5k</text><text class="axis" x="34" y="244" text-anchor="end">4k</text>
+      <path class="line" d="M40,180 L130,150 L220,165 L310,110 L400,120 L490,80 L590,95"/>
+      <line class="cross" x1="400" x2="400" y1="30" y2="250"/><circle class="mark" cx="400" cy="120" r="4"/>
+    </svg>
+    <div class="tip" style="left:410px;top:8px">Sep 21 · 4,760</div>
+  </div>
+  <div class="chart"><p class="empty-state">Not enough points in this range.</p></div>
+
+  <h2>People</h2>
+  <div class="picked"><div><h2>SomePlayer</h2><div class="sub"><a class="who quiet">Some Guild</a> · ALLY</div></div></div>
+  <div class="gear"><img class="icon" width="30" height="30" src="/icon/T6_MAIN_SWORD.png" alt=""><span class="empty"></span><span class="empty"></span></div>
+</main>
+
+<script>
+const root = document.documentElement;
+const cssVar = (name) => getComputedStyle(root).getPropertyValue(name).trim();
+
+function paint() {
+  const roles = ["--bg", "--panel", "--panel-2", "--line", "--line-strong", "--text", "--muted", "--faint",
+    "--accent", "--good", "--info", "--warn", "--bad", "--good-bg", "--info-bg", "--warn-bg", "--bad-bg", "--accent-bg"];
+  const el = document.getElementById("swatches");
+  el.innerHTML = roles.map((v) => `<div class="swatch"><i style="background:var(${v})"></i><div>${v}<span class="spec"></span></div></div>`).join("");
+  // Show what each role resolves to, so derived washes read as colours rather than formulas.
+  const rgba = (c) => {  // color-mix() computes to "color(srgb r g b / a)" with 0-1 channels
+    const m = c.match(/^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)$/);
+    return m ? `rgba(${m.slice(1, 4).map((x) => Math.round(x * 255)).join(", ")}, ${m[4] ?? 1})` : c;
+  };
+  for (const sw of el.children) sw.querySelector(".spec").textContent = rgba(getComputedStyle(sw.querySelector("i")).backgroundColor);
+}
+
+document.getElementById("typeScale").innerHTML = ["2xs", "xs", "sm", "md", "base", "lg", "xl"].map((s) =>
+  `<span class="spec">--fs-${s} ${cssVar("--fs-" + s)}</span><span style="font-size:var(--fs-${s})">Master's Broadsword 112,400</span>`).join("");
+document.getElementById("spaceScale").innerHTML = [1, 2, 3, 4, 5, 6].map((n) =>
+  `<span class="spec">--sp-${n} ${cssVar("--sp-" + n)}</span><span class="bar" style="width:calc(var(--sp-${n}) * 4)"></span>`).join("");
+document.getElementById("radii").innerHTML = ["sm", "md", "", "pill"].map((r) => {
+  const name = r ? "--radius-" + r : "--radius";
+  return `<span><span class="box" style="display:block;border-radius:var(${name})"></span><span class="spec">${name}</span></span>`;
+}).join("");
+
+const chips = document.querySelectorAll("[data-theme-pick]");
+function setTheme(theme) {
+  if (theme) root.dataset.theme = theme; else delete root.dataset.theme;
+  for (const c of chips) c.setAttribute("aria-pressed", String(c.dataset.themePick === theme));
+  paint();
+}
+for (const c of chips) c.onclick = () => setTheme(c.dataset.themePick);
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", paint);
+setTheme("");
+</script>
+</body>
+</html>

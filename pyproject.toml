@@ -1,0 +1,7 @@
+[project]
+name = "project-silver"
+version = "0.1.0"
+description = "Albion Online market data platform and dashboard"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.28"]
