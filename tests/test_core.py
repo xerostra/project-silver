@@ -617,6 +617,25 @@ class ServerSmoke(unittest.TestCase):
         planned = s.craft_payload(group["section"], group["group"], False, {"plan": ["1"], "city": ["Nowhere"]})
         self.assertEqual(len(planned["plans"]), len(planned["recipes"]))  # an empty market: nothing to plan with
 
+    def test_session_endpoints(self):
+        from silver import sessions
+        s = self.server
+        with mock.patch.object(s, "play", sessions.Sessions(Path(self.tmp.name) / "p.db")), \
+                mock.patch.object(s, "watch", mock.Mock(status={"state": "off"})):
+            self.assertIsNone(s.session_payload({})["current"])
+            self.assertEqual(s.session_action("/api/session/silver", {"silver": 5})[0], 400)  # nothing running
+            self.assertEqual(s.session_action("/api/session/start", {}), (200, {"ok": True}))
+            s.watch.start.assert_called_once()
+            self.assertEqual(s.session_action("/api/session/silver", {"silver": 1_000})[0], 200)
+            self.assertEqual(s.session_action("/api/session/silver", {"silver": 4_000})[0], 200)
+            self.assertEqual(s.session_action("/api/goals", {"kind": "silver", "target": 6_000, "period": "session"})[0], 200)
+            self.assertEqual(s.session_action("/api/goals", {"kind": "nope", "target": 1, "period": "session"})[0], 400)
+            got = s.session_payload({"tz": ["-420"]})
+            self.assertEqual((got["current"]["silver"], got["goals"][0]["fraction"]), (3_000, .5))
+            s.session_action("/api/session/stop", {})
+            self.assertIsNone(s.session_payload({})["active"])
+            self.assertEqual(s.session_action("/api/nope", {})[0], 404)
+
     def test_gold_serves_last_good_value_when_refresh_fails(self):
         s = self.server
         cache = s.Cached(s.build_gold, ttl=0)

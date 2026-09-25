@@ -240,8 +240,9 @@ kill archive and history older than the API's ~4-month window exist nowhere else
 
 ## The eye (inventory from the screen)
 
-`uv sync --extra eye` once, then `uv run --extra eye python -m silver eye` reads the inventory off your
-screen and values it (`--every 5` keeps reading; pass a PNG path to read a screenshot instead).
+`uv sync --extra eye` once, then `uv run --extra eye python -m silver eye` reads the inventory and worn
+gear off your screen and values them (`--every 5` keeps reading; pass a PNG path to read a screenshot
+instead). It also reads your silver and gold, the zone, and the game's own value estimates.
 Open your bag in game, windowed or borderless: exclusive fullscreen can capture as black.
 
 It only ever looks at pixels, like a screen recorder: nothing reads the game's memory, files or
@@ -258,6 +259,24 @@ network traffic, and nothing sends a key or a click. How it reads (`silver/eye.p
 
 Tested against two real 1080p captures in `tests/fixtures/`: every item, tier, enchant and count
 (`uv run --extra eye python -m unittest tests.test_eye`).
+
+## Sessions, goals and the overlay
+
+The **Session** tab tracks a stretch of play. Press **Start session**: while it runs, the eye (if
+installed: start the dashboard with `uv run --extra eye python -m silver serve`) reads your screen
+every 5 seconds and, whenever your inventory is open, records your silver, gold, zone and every
+item in your bag and worn gear. Without the eye, type your silver at the start and end instead.
+
+- **Profit** = silver gained + the fair-price value of items gained (or lost). Selling loot for
+  silver moves value from one to the other, so it isn't counted twice; buying gear isn't a loss.
+- **Goals:** profit, silver, loot value, profit per hour or hours played, per session, today or this
+  week (your local time), each with a progress bar.
+- **Pop out overlay** opens a small always-on-top window (Chrome/Edge Picture-in-Picture) with the
+  clock, profit, rate and your top goals, for over the game (windowed or borderless). Open the
+  dashboard at `http://localhost:8765` for it: Picture-in-Picture needs localhost, not a LAN
+  address, and falls back to an ordinary popup there.
+
+Sessions live in `data/<server>/sessions.db` (`silver/sessions.py`).
 
 ## Item icons
 

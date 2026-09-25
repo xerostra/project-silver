@@ -136,6 +136,15 @@
   <div class="row"><button class="icon-btn" aria-pressed="false" title="Add">+</button><button class="icon-btn" aria-pressed="true" title="Added">✓</button></div>
   <p class="spec">.card &gt; .card-head (h3, .meta, .actions) · tbody tr.group th for group headings · tr.done · input.qty · .icon-btn[aria-pressed] · .sr-only for labels only screen readers need</p>
 
+  <h2>Goals and meters</h2>
+  <div class="card">
+    <div class="goal"><span class="goal-name">Profit this session</span><span class="num">640k / 1.00m</span><button class="icon-btn" title="Remove goal">×</button>
+      <div class="meter"><i style="width:64%"></i></div></div>
+    <div class="goal done"><span class="goal-name">Hours played today</span><span class="num">2:00:00 / 2:00:00 ✓</span><button class="icon-btn" title="Remove goal">×</button>
+      <div class="meter"><i style="width:100%"></i></div></div>
+  </div>
+  <p class="spec">.goal (.done turns it good) &gt; .goal-name, .num, .icon-btn, .meter &gt; i (width inline: it is data) · body.overlay for the pop-out window: .ov-top, .ov-clock, .ov-nums</p>
+
   <h2>Tags and text tones</h2>
   <div class="row">
     <span class="pill">plain</span><span class="pill none">no risk</span><span class="pill safe">safe</span><span class="pill mists">mists</span><span class="pill red">red</span>

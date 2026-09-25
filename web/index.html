@@ -12,6 +12,7 @@
   <div class="server" id="server"></div>
   <div class="server" id="syncStatus" title="Background market sync"></div>
   <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="session" aria-selected="false">Session</button>
     <button class="tab" role="tab" data-tab="resources" aria-selected="true">Resources</button>
     <button class="tab" role="tab" data-tab="market" aria-selected="false">Market</button>
     <button class="tab" role="tab" data-tab="flips" aria-selected="false">Flips</button>
@@ -40,6 +41,38 @@
 </header>
 
 <main>
+  <!-- SESSION: play tracker, goals, pop-out overlay -->
+  <section id="view-session" class="hidden">
+    <div class="toolbar">
+      <button class="btn primary" id="playBtn">Start session</button>
+      <button class="btn" id="popBtn" title="A small always-on-top window for over the game (borderless or windowed)">Pop out overlay</button>
+      <span class="meta" id="playMeta"></span>
+    </div>
+    <div class="tiles" id="playTiles"></div>
+    <div class="card">
+      <div class="card-head">
+        <h3>Goals</h3>
+        <span class="actions">
+          <select id="goalKind" aria-label="Goal"></select>
+          <input type="number" id="goalTarget" min="1" step="100000" placeholder="Target" aria-label="Target">
+          <select id="goalPeriod" aria-label="Period"><option value="session">this session</option><option value="today">today</option><option value="week">this week</option></select>
+          <button class="btn" id="goalAdd">Add goal</button>
+        </span>
+      </div>
+      <div id="goalList"></div>
+    </div>
+    <h3 class="section-title">Gained this session</h3>
+    <div class="table-wrap"><table id="lootTable"></table></div>
+    <div class="filters space-above">
+      <label>Silver now <input type="number" id="silverNow" min="0" step="1000"></label>
+      <button class="btn" id="silverRecord">Record</button>
+      <span>No eye? Type your silver at the start and end of a session.</span>
+    </div>
+    <h3 class="section-title">Recent sessions</h3>
+    <div class="table-wrap"><table id="playHistory"></table></div>
+    <p class="hint">While a session runs, the eye reads your screen every few seconds and records your silver and every item in your bag and worn gear whenever you have the inventory open. It only looks at pixels, like a screenshot: nothing touches the game. <b>Profit</b> is silver gained plus the market value (fair price) of items gained, so selling loot for silver doesn't count twice. The eye needs <code>uv sync --extra eye</code>.</p>
+  </section>
+
   <!-- RESOURCES -->
   <section id="view-resources">
     <div class="toolbar">
@@ -1769,6 +1802,141 @@ function renderTransports() {
 $("trFaction").addEventListener("input", () => { store.set("tr.faction", $("trFaction").value); renderTransports(); });
 $("trNoRed").addEventListener("input", renderTransports);
 
+/* ---------- session: play tracker, goals and the pop-out overlay ---------- */
+let PLAY = null, playTimer = null, OVERLAY = null;
+const EYE_TEXT = {
+  off: "Eye off", starting: "Eye starting (loading item pictures)…", waiting: "Eye on: open your bag in game",
+  watching: "Eye watching", error: "Eye error", unavailable: "Eye not installed",
+};
+const PERIOD_TEXT = { session: "this session", today: "today", week: "this week" };
+const KIND_TEXT = { profit: "Profit", silver: "Silver", loot: "Loot value", per_hour: "Profit / hour", hours: "Hours played" };
+const clock = (secs) => { const s = Math.max(0, Math.floor(secs)); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+const goalValue = (kind, v) => kind === "hours" ? clock(v * 3600) : kind === "per_hour" ? short(v) + "/h" : short(v);
+
+async function postJSON(url, body = {}) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+async function loadPlay() {
+  try {
+    PLAY = await getJSON("/api/session?tz=" + new Date().getTimezoneOffset());
+    renderPlay(); renderOverlay();
+  } catch (e) {
+    $("playMeta").innerHTML = `<span class="error">Failed: ${esc(e.message)}</span>`;
+  }
+}
+// Poll while someone is looking: the Session tab or the overlay.
+function pollPlay() {
+  clearTimeout(playTimer);
+  if (OVERLAY?.closed) OVERLAY = null;
+  if (S.tab === "session" || OVERLAY) playTimer = setTimeout(async () => { await loadPlay(); pollPlay(); }, 3000);
+}
+// The clock ticks every second between polls.
+setInterval(() => {
+  if (!PLAY?.active) return;
+  const t = clock(Date.now() / 1000 - PLAY.active.started);
+  for (const el of [$("playClock"), OVERLAY?.document.getElementById("ovClock")]) if (el) el.textContent = t;
+}, 1000);
+
+function eyeLine(eye) {
+  const bits = [EYE_TEXT[eye.state] || eye.state];
+  if (eye.zone) bits.push(esc(eye.zone));
+  if (eye.seen_at) bits.push(`seen ${ageTxt(eye.seen_at)} ago`);
+  return bits.join(" · ") + (eye.error ? ` <span class="warn" title="${esc(eye.error)}">⚠ ${esc(eye.error)}</span>` : "");
+}
+
+function goalRows(goals, doc = document) {
+  return goals.map((g) => {
+    const done = g.fraction >= 1;
+    return `<div class="goal${done ? " done" : ""}">
+      <span class="goal-name">${KIND_TEXT[g.kind]} ${PERIOD_TEXT[g.period]}</span>
+      <span class="num">${goalValue(g.kind, g.value)} / ${goalValue(g.kind, g.target)}${done ? " ✓" : ""}</span>
+      ${doc === document ? `<button class="icon-btn" data-goal="${g.id}" title="Remove goal">×</button>` : ""}
+      <div class="meter" role="progressbar" aria-valuenow="${Math.round(g.fraction * 100)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${(g.fraction * 100).toFixed(1)}%"></i></div>
+    </div>`;
+  }).join("");
+}
+
+function renderPlay() {
+  if (!PLAY) return;
+  const run = PLAY.active, cur = PLAY.current;
+  $("playBtn").textContent = run ? "Stop session" : "Start session";
+  $("playMeta").innerHTML = run ? eyeLine(PLAY.eye) : cur ? `Last session ended ${ageTxt(cur.ended)} ago` : "No sessions yet.";
+  if (!$("goalKind").options.length) $("goalKind").innerHTML = Object.keys(PLAY.kinds).map((k) => `<option value="${k}" title="${esc(PLAY.kinds[k])}">${KIND_TEXT[k]}</option>`).join("");
+  const tile = (k, v, d = "", id = "") => `<div class="tile"><div class="k">${k}</div><div class="v num"${id ? ` id="${id}"` : ""}>${v}</div><div class="d">${d}</div></div>`;
+  const tone = (v) => !v ? "" : v > 0 ? "up" : "down";
+  $("playTiles").innerHTML = !cur ? "" :
+    tile("Time", clock((run ? Date.now() / 1000 : cur.ended) - cur.started), run ? "running" : "ended", "playClock")
+    + tile("Profit", `<span class="${tone(cur.profit)}">${plusSilver(cur.profit)}</span>`, "silver + items")
+    + tile("Per hour", cur.per_hour == null ? "–" : `<span class="${tone(cur.per_hour)}">${plusSilver(cur.per_hour)}</span>`)
+    + tile("Silver", `<span class="${tone(cur.silver)}">${plusSilver(cur.silver)}</span>`, cur.balance.silver == null ? "" : `now ${short(cur.balance.silver)}`)
+    + tile("Items", `<span class="${tone(cur.loot_value)}">${plusSilver(cur.loot_value)}</span>`, `${cur.loot.length} changed`)
+    + tile("Zones", cur.zones.length || "–", esc(cur.zones.slice(-2).join(", ")));
+  $("goalList").innerHTML = PLAY.goals.length ? goalRows(PLAY.goals) : '<p class="empty-state">No goals yet. Pick one above: say 1m profit this session.</p>';
+  $("lootTable").innerHTML = `<thead><tr><th class="left">Item</th><th>Change</th><th>Each</th><th>Value</th></tr></thead><tbody>${
+    (cur?.loot || []).map((x) => `<tr><td class="left"><div class="item">${iconImg(x.id)}<span class="name">${esc(x.name)}</span></div></td>
+      <td class="num ${x.change > 0 ? "up" : "down"}">${x.change > 0 ? "+" : "−"}${fmt(Math.abs(x.change))}</td>
+      <td class="num">${x.each ? fmt(x.each) : '<span class="none" title="No market price">–</span>'}</td>
+      <td class="num">${x.value == null ? '<span class="none">–</span>' : plusSilver(x.value)}</td></tr>`).join("")
+    || `<tr><td class="left none" colspan="4">${run ? "Nothing yet: the eye compares each look at your bag with the first." : "Start a session to track what you gain."}</td></tr>`}</tbody>`;
+  $("playHistory").innerHTML = `<thead><tr><th class="left">Started</th><th>Time</th><th>Profit</th><th>Per hour</th><th class="left">Zones</th></tr></thead><tbody>${
+    PLAY.history.map((h) => `<tr><td class="left">${new Date(h.started * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}</td>
+      <td class="num">${clock(h.hours * 3600)}</td><td class="num ${tone(h.profit)}">${plusSilver(h.profit)}</td>
+      <td class="num">${h.per_hour == null ? "–" : plusSilver(h.per_hour)}</td><td class="left">${esc(h.zones.join(", ")) || '<span class="none">–</span>'}</td></tr>`).join("")
+    || '<tr><td class="left none" colspan="5">None yet.</td></tr>'}</tbody>`;
+}
+
+// The overlay: a small always-on-top window (Document Picture-in-Picture, Chrome/Edge 116+),
+// or a plain popup elsewhere. Same stylesheet, compact layout, fed by the same polling.
+function renderOverlay() {
+  if (!OVERLAY || OVERLAY.closed || !PLAY) return;
+  const cur = PLAY.current, run = PLAY.active;
+  OVERLAY.document.body.innerHTML = `<div class="ov-top"><span class="ov-clock num" id="ovClock">${cur ? clock((run ? Date.now() / 1000 : cur.ended) - cur.started) : "0:00:00"}</span>
+      <span class="ov-state">${run ? esc(PLAY.eye.zone || EYE_TEXT[PLAY.eye.state] || "") : "not running"}</span></div>
+    <div class="ov-nums"><div><span class="k">Profit</span><b class="num">${cur ? plusSilver(cur.profit) : "–"}</b></div>
+      <div><span class="k">Per hour</span><b class="num">${cur?.per_hour == null ? "–" : plusSilver(cur.per_hour)}</b></div>
+      <div><span class="k">Silver</span><b class="num">${cur ? plusSilver(cur.silver) : "–"}</b></div></div>
+    ${goalRows(PLAY.goals.slice(0, 3), OVERLAY.document)}`;
+}
+
+async function popOut() {
+  if (OVERLAY && !OVERLAY.closed) { OVERLAY.focus(); return; }
+  const w = window.documentPictureInPicture
+    ? await documentPictureInPicture.requestWindow({ width: 300, height: 220 })
+    : window.open("", "silver-overlay", "popup,width=300,height=240");
+  if (!w) { $("playMeta").innerHTML = '<span class="warn">The browser blocked the overlay window.</span>'; return; }
+  w.document.title = "Silver session";
+  w.document.head.innerHTML = `<meta charset="utf-8"><link rel="stylesheet" href="${location.origin}/silver.css">`;
+  w.document.body.className = "overlay";
+  OVERLAY = w;
+  renderOverlay(); pollPlay();
+}
+
+$("playBtn").onclick = async () => {
+  $("playBtn").disabled = true;
+  try { await postJSON(PLAY?.active ? "/api/session/stop" : "/api/session/start"); await loadPlay(); }
+  catch (e) { $("playMeta").innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  $("playBtn").disabled = false;
+};
+$("popBtn").onclick = popOut;
+$("goalAdd").onclick = async () => {
+  try {
+    await postJSON("/api/goals", { kind: $("goalKind").value, target: +$("goalTarget").value, period: $("goalPeriod").value });
+    $("goalTarget").value = ""; await loadPlay();
+  } catch (e) { $("playMeta").innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+};
+$("goalList").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-goal]"); if (!b) return;
+  await postJSON("/api/goals/delete", { id: +b.dataset.goal }); loadPlay();
+});
+$("silverRecord").onclick = async () => {
+  try { await postJSON("/api/session/silver", { silver: +$("silverNow").value }); $("silverNow").value = ""; await loadPlay(); }
+  catch (e) { $("playMeta").innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+};
+
 /* ---------- gold ---------- */
 let GOLD = null;
 const G = { range: store.get("g.range", "7") };
@@ -2127,6 +2295,7 @@ function setTab(tab) {
   if (tab === "meta") loadMeta();
   if (tab === "market") loadMarket();
   if (tab === "enchant") loadEnchant();
+  if (tab === "session") { loadPlay(); pollPlay(); }
 }
 document.querySelectorAll(".tab").forEach((b) => {
   b.id = "tab-" + b.dataset.tab;

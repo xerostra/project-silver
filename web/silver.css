@@ -253,6 +253,27 @@ img.icon.failed { visibility: hidden; }
 .card-head .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-left: auto; }
 .card .table-wrap { background: none; }
 
+/* Meter: progress towards a target. Fill width is set inline (it is data); tone via --tone. */
+.meter { height: 6px; border-radius: var(--radius-pill); background: var(--panel-2); overflow: hidden; }
+.meter > i { display: block; height: 100%; border-radius: inherit; background: var(--tone, var(--accent)); transition: width var(--ease); }
+
+/* Goal: name, value / target, remove, and its meter underneath */
+.goal { display: grid; grid-template-columns: 1fr auto auto; gap: var(--sp-1) var(--sp-3); align-items: center; padding: var(--sp-2) 0; }
+.goal + .goal { border-top: 1px solid var(--line); }
+.goal .meter { grid-column: 1 / -1; }
+.goal.done { --tone: var(--good); }
+.goal.done .num { color: var(--good); }
+
+/* Overlay: the pop-out session window over the game. Dense, big numbers, no chrome. */
+body.overlay { padding: var(--sp-3); font-size: var(--fs-md); }
+.overlay .ov-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2); }
+.overlay .ov-clock { font-size: 26px; font-weight: var(--fw-bold); }
+.overlay .ov-state { color: var(--muted); font-size: var(--fs-xs); text-align: right; }
+.overlay .ov-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-2); margin: var(--sp-2) 0; }
+.overlay .ov-nums .k { display: block; color: var(--muted); font-size: var(--fs-2xs); }
+.overlay .ov-nums b { font-size: var(--fs-lg); }
+.overlay .goal { padding: var(--sp-1) 0; font-size: var(--fs-xs); }
+
 /* Empty state for a panel with nothing to show */
 .empty-state { color: var(--faint); padding: var(--sp-3); margin: 0; }
 
@@ -267,5 +288,6 @@ img.icon.failed { visibility: hidden; }
 .loss, .down { color: var(--bad); }
 .search-wide { width: min(420px, 100%); }
 .gap-left { margin-left: var(--sp-3); }
+.space-above { margin-top: var(--sp-3); }
 .hidden { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

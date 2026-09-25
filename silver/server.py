@@ -23,6 +23,11 @@ GET  /api/intel/search?q=X       players and guilds matching a name
 GET  /api/player?id=X            a player's profile, recent kills and deaths
 GET  /api/guild?id=X             a guild's totals and members
 GET  /api/meta?days=N&size=S     weapons, builds and items lost in collected kills (S: solo/small/group/zvz)
+GET  /api/session?tz=M            the running session, recent ones, goals and the eye's state (M: the
+                                 browser's getTimezoneOffset(), for "today" and "this week")
+POST /api/session/start|stop     start (the eye watches while it runs) or end a session
+POST /api/session/silver         {"silver": N}: record your silver by hand (without the eye)
+POST /api/goals                  {"kind", "target", "period"}: add a goal; /api/goals/delete {"id"}
 """
 import gzip
 import json
@@ -35,7 +40,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import icons as icons_mod
-from . import collect, config, crafting, enchanting, production, farming, flips, focus, gold, hearts, intel, items, laborers, meta, transports
+from . import collect, config, crafting, enchanting, production, farming, flips, focus, gold, hearts, intel, items, laborers, meta, sessions, transports
 from .api import AlbionAPI, APIError, GameInfo
 from .killstore import Collector, KillStore
 from .store import ALL, Store, sync_history, sync_prices
@@ -473,11 +478,64 @@ def refresh_focus_prices(progress):
 store = None   # market store, opened by serve() (tests use temporary ones)
 kills = None   # kill store, likewise
 syncer = None  # set when this process is the collector
+play = None    # session store, opened by serve()
+watch = None   # the eye, watching while a session runs
 snapshots = Snapshots()
 scanner = Job(lambda progress: flips.scan(store, api, progress=progress))
 focus_job = Job(refresh_focus_prices)
 gold_cache = Cached(build_gold, GOLD_TTL)
 icons = icons_mod.Icons()
+
+
+def session_payload(query):
+    """The running session (or the last), sessions since the week began, goals, and the eye."""
+    tz = number(query, "tz", 0, -14 * 60, 14 * 60)
+    now = time.time()
+    since = min(sessions.period_start("week", now, tz), now - 14 * 86400)
+    runs = play.recent(since=since) or play.recent(limit=1)
+    snaps = {r["id"]: play.snapshots(r["id"]) for r in runs}
+    ids = {i for ss in snaps.values() for s in ss for i in s["held"]}
+    fair = store.fair(list(ids)) if ids else {}
+    price = lambda i: fair.get(i, {}).get(1, {}).get(ALL, {}).get("price")
+    summaries = [sessions.summarize(r, snaps[r["id"]], price, now) for r in runs]
+    names = items.names()
+    for s in summaries[:1]:
+        for x in s["loot"]:
+            x["name"] = names.get(x["id"], x["id"])
+    return {
+        "active": play.active(), "now": now,
+        "current": summaries[0] if summaries else None,
+        "history": [{k: v for k, v in s.items() if k != "loot"} for s in summaries],
+        "goals": [sessions.goal_progress(g, summaries, now, tz) for g in play.goals()],
+        "kinds": sessions.GOAL_KINDS, "periods": sessions.PERIODS,
+        "eye": watch.status if watch else {"state": "off"},
+    }
+
+
+def session_action(path, body):
+    """POST /api/session/* and /api/goals*: returns (status, payload)."""
+    if path == "/api/session/start":
+        watch.start(play.start())
+    elif path == "/api/session/stop":
+        play.stop()
+        watch.stop()
+    elif path == "/api/session/silver":
+        run = play.active()
+        silver = body.get("silver")
+        if not run or not isinstance(silver, (int, float)) or silver < 0:
+            return 400, {"error": "needs a running session and a silver amount"}
+        last = play.last(run["id"]) or {"gold": None, "held": {}, "zone": None}
+        play.record(run["id"], int(silver), last["gold"], last["held"], last["zone"], source="typed")
+    elif path == "/api/goals":
+        try:
+            play.add_goal(body.get("kind"), body.get("target"), body.get("period"))
+        except (ValueError, TypeError) as exc:
+            return 400, {"error": str(exc)}
+    elif path == "/api/goals/delete":
+        play.remove_goal(body.get("id"))
+    else:
+        return 404, {"error": "not found"}
+    return 200, {"ok": True}
 
 
 def client_config():
@@ -532,6 +590,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, (WEB_DIR / name).read_bytes(), content_type)
             elif url.path.startswith("/icon/") and url.path.endswith(".png"):
                 self._send_icon(unquote(url.path[len("/icon/"):-len(".png")]))
+            elif url.path == "/api/session":
+                self._send(200, session_payload(query))
             elif url.path == "/api/config":
                 self._send(200, client_config())
             elif url.path == "/api/resources":
@@ -610,9 +670,17 @@ class Handler(BaseHTTPRequestHandler):
         if not 0 <= length <= 1_000_000:
             self.close_connection = True
             return self._send(400, {"error": "bad Content-Length"})
-        self.rfile.read(length)
+        raw = self.rfile.read(length)
         path = urlparse(self.path).path
-        if path == "/api/flips/scan":
+        try:
+            body = json.loads(raw or b"{}")
+        except ValueError:
+            return self._send(400, {"error": "body must be JSON"})
+        if not isinstance(body, dict):
+            return self._send(400, {"error": "body must be a JSON object"})
+        if path.startswith(("/api/session/", "/api/goals")):
+            self._send(*session_action(path, body))
+        elif path == "/api/flips/scan":
             self._send(202, {"started": scanner.start()})
         elif path == "/api/focus/scan":
             self._send(202, {"started": focus_job.start()})
@@ -628,8 +696,12 @@ def serve(host="127.0.0.1", port=8765):
         server = ThreadingHTTPServer((host, port), Handler)
     except OSError as exc:
         raise SystemExit(f"Can't listen on {host}:{port} ({exc.strerror}). Is it already running? Try --port.")
-    global store, kills
+    global store, kills, play, watch
     store, kills = Store(), KillStore()
+    play = sessions.Sessions()
+    watch = sessions.EyeWatch(play)
+    if run := play.active():
+        watch.start(run["id"])  # a session left running when the server last stopped
     print(f"Project Silver dashboard: http://localhost:{port}  "
           f"({config.SERVERS[config.SERVER]['label']}: {config.HOST})", flush=True)
     stop = threading.Event()
