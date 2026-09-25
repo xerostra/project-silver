@@ -119,28 +119,33 @@ def cmd_eye(args):
         cache.join()
     print("loading item renders…", flush=True)
     refs, reader, store, names = eye.References(), eye.Reader(), Store(), items.names()
+    screen = None if args.image else eye.Screen()
     while True:
-        img = cv2.imread(args.image) if args.image else eye.capture()
+        img = cv2.imread(args.image) if args.image else screen.capture()
         if img is None:
             raise SystemExit(f"can't read {args.image}")
         snap = eye.read_inventory(img, refs, reader)
         if snap is None:
             print("no inventory on screen: open your bag (the game windowed or borderless)")
         else:
-            fair = store.fair([i["id"] for i in snap.items])
-            total = 0
-            print(f"\n{'item':<44} {'count':>5} {'each':>10} {'value':>11}  match")
-            for i in snap.items:
-                each = fair.get(i["id"], {}).get(1, {}).get(ALL, {}).get("price")
-                value = each * i["count"] if each else None
-                total += value or 0
-                name = f"{names.get(i['id'], i['id'])} ({i['id']})"[:44]
-                print(f"{name:<44} {i['count']:>5} {each or '-':>10,} {value or '-':>11,}  {i['confidence']:.2f}"
-                      if each else f"{name:<44} {i['count']:>5} {'-':>10} {'-':>11}  {i['confidence']:.2f}")
-            print(f"{'fair value of the bag':<44} {'':>5} {'':>10} {total:>11,}")
-            if snap.market_value:
-                print(f"{'the game estimates':<44} {'':>5} {'':>10} {snap.market_value:>11,}")
-            print(f"balances {', '.join(f'{b:,}' for b in snap.balances) or '-'} · load {snap.weight}%")
+            fair = store.fair([i["id"] for i in snap.items + snap.equipment])
+
+            def table(title, rows, label):
+                total = 0
+                print(f"\n{title:<44} {'count':>5} {'each':>10} {'value':>11}  match")
+                for i in rows:
+                    each = fair.get(i["id"], {}).get(1, {}).get(ALL, {}).get("price")
+                    total += (each or 0) * i["count"]
+                    name = f"{label(i)} {names.get(i['id'], i['id'])}"[:44]
+                    price = f"{each:>10,} {each * i['count']:>11,}" if each else f"{'-':>10} {'-':>11}"
+                    print(f"{name:<44} {i['count']:>5} {price}  {i['confidence']:.2f}")
+                print(f"{'fair value':<44} {'':>5} {'':>10} {total:>11,}")
+            table("bag", snap.items, lambda i: f"{i['row']},{i['col']}")
+            if snap.equipment:
+                table("worn", snap.equipment, lambda i: i["slot"])
+            game = ", ".join(f"{k} {v:,}" for k, v in (("bag", snap.market_value), ("worn", snap.gear_value)) if v)
+            print(f"\nthe game's estimate: {game or '-'}")
+            print(f"silver {snap.silver or 0:,} · gold {snap.gold or 0:,} · load {snap.weight}% · zone {snap.zone or '-'}")
         if not args.every:
             break
         time.sleep(args.every)

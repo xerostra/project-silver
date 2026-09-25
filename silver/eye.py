@@ -15,7 +15,6 @@ Numbers (stack counts, balances, the game's own market value estimate) are read 
 
 Needs the `eye` extra: `uv sync --extra eye`.
 """
-import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -54,15 +53,39 @@ def tier(item_id):
     return int(m[1]) if m else None
 
 
-def enchant_of(tile):
-    """How many lit enchant diamonds sit along the bottom left of a slot."""
-    h, w = tile.shape[:2]
-    strip = cv2.cvtColor(tile[int(h * .84):, int(w * .08):int(w * .62)], cv2.COLOR_BGR2HSV)
-    lit = ((strip[:, :, 1] > 90) & (strip[:, :, 2] > 120)).astype(np.uint8)
-    _, _, stats, _ = cv2.connectedComponentsWithStats(lit)
-    area = h * w
-    # diamond-sized and diamond-shaped: not a sliver of glow or a speck of art
-    return sum(1 for s in stats[1:] if .003 * area < s[4] < .03 * area and .5 < s[2] / s[3] < 2)
+DIAMONDS = [.25 + .105 * k for k in range(4)]  # socket centres across the slot, as fractions of its width
+
+
+def enchant_of(img, x, y, w, h):
+    """Lit enchant diamonds on the slot at (x, y): 0 to 4. They sit in a row of four sockets
+    along the bottom left, lit from the first one, all one colour (green .1, blue .2, purple .3,
+    gold .4). So a bright blob only counts at a socket position, in line with and the colour of
+    the first: blue boot soles or glowing art beside the row don't. The band searched runs a few
+    pixels past the slot, so a slightly-off position can't cut the row off."""
+    top = y + int(h * .78)
+    band = img[top:y + h + max(3, h // 20), x:x + w]
+    hsv = cv2.cvtColor(band, cv2.COLOR_BGR2HSV)
+    lit = ((hsv[:, :, 1] > 90) & (hsv[:, :, 2] > 120)).astype(np.uint8)
+    k = max(2, round(w * .03))  # opening strips thin glow lines that can fuse onto a diamond
+    lit = cv2.morphologyEx(lit, cv2.MORPH_OPEN, np.ones((k, k), np.uint8))
+    _, labels, stats, centres = cv2.connectedComponentsWithStats(lit)
+    H, W = lit.shape
+    small, big = max(2, w * .04), w * .16
+    blobs = [(cx, cy, float(np.median(hsv[:, :, 0][labels == i])))
+             for i, ((bx, by, bw, bh, area), (cx, cy)) in enumerate(zip(stats, centres)) if i
+             and small <= bw <= big and small <= bh <= big and area >= .35 * bw * bh
+             and bx > 0 and by > 0 and bx + bw < W and by + bh < H]
+    near = lambda k, shift: [b for b in blobs if abs(b[0] - (w * DIAMONDS[k] + shift)) <= w * .04]
+    first = near(0, 0) or near(0, w * .04) or near(0, -w * .04)
+    if not first:
+        return 0
+    cx0, cy0, hue0 = first[0]
+    shift, count = cx0 - w * DIAMONDS[0], 1
+    for k in (1, 2, 3):
+        if not any(abs(cy - cy0) <= 3 and min(abs(hue - hue0), 180 - abs(hue - hue0)) <= 12 for _, cy, hue in near(k, shift)):
+            break
+        count += 1
+    return count
 
 
 def enchant(item_id):
@@ -110,24 +133,43 @@ class References:
                 by_tier.setdefault(tier(item_id), []).append(_badge(tile))
         self.badges = {t: np.median(v, 0) for t, v in by_tier.items()}
 
+    def settle(self, img, x, y, w, h, reach=3, shortlist=30):
+        """(x, y) nudged up to `reach` px to where the slot's art lines up best with the renders
+        it most resembles. Worn gear sits at measured offsets that can be a couple of pixels out,
+        and the match is sensitive to that; the bag grid is measured from its own frames."""
+        tile = img[y:y + h, x:x + w]
+        if tile.shape[:2] != (h, w):
+            return x, y
+        near = np.argsort(-(self.coarse @ _coarse(tile)))[:shortlist]
+        best, where = -1.0, (x, y)
+        for dy in range(-reach, reach + 1):
+            for dx in range(-reach, reach + 1):
+                t = img[y + dy:y + dy + h, x + dx:x + dx + w]
+                if t.shape[:2] == (h, w) and (score := float((self.coarse[near] @ _coarse(t)).max())) > best:
+                    best, where = score, (x + dx, y + dy)
+        return where
+
     def tier_of(self, tile):
         """The tier a slot's badge colour says, or None without references."""
         b = _badge(tile)
         return min(self.badges, key=lambda t: float(np.linalg.norm(self.badges[t] - b)), default=None)
 
-    def identify(self, tile):
-        """(item id, confidence 0-1) for one slot tile, or (None, 0) with no references."""
+    def identify(self, tile, lit=0):
+        """(item id, confidence 0-1) for one slot tile, or (None, 0) with no references.
+        `lit` is the enchant diamonds counted on screen. Confidence is how well the item's
+        best-matching variant fits: an enchanted item on screen lacks its render's glow, so its
+        own variant fits a little less well."""
         if not self.ids:
             return None, 0.0
         scores = self.coarse @ _coarse(tile)
         best = int(np.argmax(scores))
+        confidence = float(scores[best])
         # The picture finds the item; the badge colour picks its tier and the diamonds its enchant.
         variants = self.families[family(self.ids[best])]
         on_tier = [i for i in variants if tier(self.ids[i]) == self.tier_of(tile)] or variants
-        lit = enchant_of(tile)
         pool = [i for i in on_tier if enchant(self.ids[i]) == lit] or on_tier
         best = max(pool, key=lambda i: scores[i])
-        return self.ids[best], float(scores[best])
+        return self.ids[best], confidence
 
 
 @dataclass
@@ -174,29 +216,43 @@ def _grid_of(boxes):
     return members, (np.median([d / n for d, n in spans if n == far]) if far else pitch)
 
 
-def find_bag(img, cols=4):
-    """The inventory bag grid, or None when no bag is open. The bag is the biggest set of
-    same-size frames on one regular grid: equipment slots sit off it, and nothing in the game
-    world lines up that way. No resolution or UI scale needs configuring."""
+def bag_candidates(img, cols=4):
+    """Grids that could be the inventory bag, likeliest first: same-size frames on one regular
+    grid, at most four wide (the skill bar is a grid too, but ten wide). Menu buttons can form
+    such a grid as well, so the reader keeps the first whose tiles turn out to be items.
+    No resolution, UI scale or panel position needs configuring."""
     squares = _squares(img)
-    best, pitch = [], 0
+    found = []
     for size in sorted({b[2] for b in squares}):
         group = [b for b in squares if abs(b[2] - size) <= .08 * size]
-        if len(group) > len(best):
-            members, p = _grid_of(group)
-            span = round((max(b[0] for b in members) - min(b[0] for b in members)) / p) + 1 if members else 0
-            if len(members) > len(best) and span <= cols:  # the skill bar is a grid too, but ten wide
-                best, pitch = members, p
-    if len(best) < 3:
-        return None
-    w = int(np.median([b[2] for b in best]))
-    h = int(np.median([b[3] for b in best]))
-    x0, y0 = min(b[0] for b in best), min(b[1] for b in best)
-    pitch = int(round(pitch))
-    # Every row that fits: frames blend into some art, so the rows with detected frames can stop
-    # short of the last item. Cells past the bag are empty or match nothing and get dropped.
-    rows = max(1, min(12, (img.shape[0] - y0 - h) // pitch + 1))
-    return Grid(x0, y0, pitch, w, h, cols, rows)
+        members, pitch = _grid_of(group) if len(group) >= 3 else ([], 0)
+        if len(members) < 3 or any(m in f[1] for f in found for m in members):
+            continue  # too few, or the same grid again at a neighbouring size
+        if round((max(b[0] for b in members) - min(b[0] for b in members)) / pitch) + 1 > cols:
+            continue
+        w, h = int(np.median([b[2] for b in members])), int(np.median([b[3] for b in members]))
+        x0, y0, pitch = min(b[0] for b in members), min(b[1] for b in members), int(round(pitch))
+        # Every row that fits: frames blend into some art, so the rows with detected frames can
+        # stop short of the last item. Cells past the bag are empty or match nothing and get dropped.
+        rows = max(1, min(12, (img.shape[0] - y0 - h) // pitch + 1))
+        found.append((Grid(x0, y0, pitch, w, h, cols, rows), members))
+    return sorted(found, key=lambda f: -len(f[1]))
+
+
+def find_bag(img):
+    """The likeliest bag grid by shape alone (read_inventory also checks its tiles are items)."""
+    found = bag_candidates(img)
+    return found[0][0] if found else None
+
+
+# Worn gear: a paper doll above the bag, at fixed offsets in slot pitches from the bag's first
+# cell (measured at 1080p; offsets in pitches follow the UI scale). The middle column sits higher.
+# The mount is drawn in grey, so neither its picture nor its tier colour can be matched: not read.
+EQUIPMENT = {
+    "bag": (.52, -4.20), "head": (1.62, -4.35), "cape": (2.75, -4.20),
+    "weapon": (.52, -3.19), "armor": (1.62, -3.34), "offhand": (2.75, -3.19),
+    "potion": (.52, -2.19), "shoes": (1.62, -2.33), "food": (2.75, -2.19),
+}
 
 
 def is_empty(tile):
@@ -255,9 +311,11 @@ def _digit_line(ink):
     ink = cv2.morphologyEx(ink.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))  # rejoin thin strokes
     n, labels, stats, _ = cv2.connectedComponentsWithStats(ink)
     H, W = ink.shape
-    # off the edges and tall enough: drops the ring's highlight and any glow or art
+    # off the edges, tall enough, and near the circle's middle (digits are centred in it):
+    # drops the ring's highlight and any glow or art poking into the corner
     keep = [i for i in range(1, n) if stats[i, 1] > 2 and stats[i, 1] + stats[i, 3] < H - 2
-            and stats[i, 0] > 2 and stats[i, 0] + stats[i, 2] < W - 2 and stats[i, 3] > H * .2]
+            and stats[i, 0] > 2 and stats[i, 0] + stats[i, 2] < W - 2 and stats[i, 3] > H * .2
+            and abs(stats[i, 0] + stats[i, 2] / 2 - W * .65) < W * .23]
     if not keep:
         return None
     on = np.isin(labels, keep)
@@ -270,72 +328,141 @@ def _digit_line(ink):
 
 @dataclass
 class Snapshot:
-    items: list          # [{"row", "col", "id", "confidence", "count"}]
-    market_value: int    # the game's own "Est. Market Value" for the bag, if shown
-    balances: list       # the amounts beside the coin icons, top first
+    items: list          # bag: [{"row", "col", "id", "confidence", "count"}]
+    equipment: list      # worn: [{"slot", "id", "confidence", "count"}]
+    silver: int          # the balances beside the coins: silver below...
+    gold: int            # ...gold above
+    market_value: int    # the game's own "Est. Market Value" of the bag (exact while its tooltip shows)
+    gear_value: int      # the game's value of the worn gear: only while that tooltip shows
     weight: int          # load, in percent
+    zone: str            # from the location bar, bottom right; None on a cropped screenshot
+
+
+MIN_MATCH = .6   # a bag's tiles match item renders at least this well; menu buttons don't
+MIN_ITEM = .65   # a cell below this is UI past the bag (or a tooltip over it), not an item
+
+
+def _tile(img, grid, x, y):
+    tile = img[y:y + grid.h, x:x + grid.w]
+    return None if tile.shape[:2] != (grid.h, grid.w) or is_empty(tile) else tile
+
+
+def locate_bag(img, refs):
+    """The bag grid: the likeliest candidate whose frames hold items, or None."""
+    for grid, members in bag_candidates(img):
+        sample = [refs.identify(t)[1] for b in members[:6] if (t := _tile(img, grid, b[0], b[1])) is not None]
+        if sample and np.median(sample) >= MIN_MATCH:
+            return grid
+    return None
 
 
 def read_inventory(img, refs, reader):
     """Everything the eye can read from one screenshot with the inventory open, or None."""
-    grid = find_bag(img)
+    grid = locate_bag(img, refs)
     if grid is None:
         return None
-    MIN_MATCH = .6   # below this nothing on the "bag" looks like any item: some other UI
-    MIN_ITEM = .5    # a cell below this is UI past the bag, not an item
     items = []
     for r, c, x, y in grid.cells():
+        if (tile := _tile(img, grid, x, y)) is None:
+            continue
+        item_id, confidence = refs.identify(tile, enchant_of(img, x, y, grid.w, grid.h))
+        if confidence >= MIN_ITEM:
+            items.append({"row": r, "col": c, "id": item_id, "confidence": round(confidence, 3),
+                          "count": reader.count(tile)})
+    equipment = []
+    for slot, (dx, dy) in EQUIPMENT.items():
+        x, y = round(grid.x + dx * grid.pitch), round(grid.y + dy * grid.pitch)
+        if _tile(img, grid, x, y) is None:
+            continue
+        x, y = refs.settle(img, x, y, grid.w, grid.h)
         tile = img[y:y + grid.h, x:x + grid.w]
-        if tile.shape[:2] != (grid.h, grid.w) or is_empty(tile):
-            continue
-        item_id, confidence = refs.identify(tile)
-        if confidence < MIN_ITEM:
-            continue
-        items.append({"row": r, "col": c, "id": item_id, "confidence": round(confidence, 3),
-                      "count": reader.count(tile)})
-    if not items or max(i["confidence"] for i in items) < MIN_MATCH:
-        return None
+        item_id, confidence = refs.identify(tile, enchant_of(img, x, y, grid.w, grid.h))
+        if confidence >= MIN_ITEM:
+            equipment.append({"slot": slot, "id": item_id, "confidence": round(confidence, 3),
+                              "count": reader.count(tile)})
     # The panel text sits around the bag: balances and load just above it, the estimate below.
     left, right = max(0, grid.x - grid.pitch), grid.x + (grid.cols + 1) * grid.pitch
     top = max(0, grid.y - 3 * grid.pitch)
-    lines = reader.lines(img[top:, left:right])
-    market_value, balances, weight = None, [], None
-    for x, y, text in lines:
+    market_value, gear_value, exact, balances, weight = None, None, None, [], None
+    for x, y, text in reader.lines(img[top:, left:right]):
         y += top
         if m := re.search(r"Market\s*Value\W*([\d.,]+\s*[kmb]?)", text, re.I):
             market_value = parse_amount(m[1])
+        elif m := re.match(r"\s*Equipment\W*([\d,]+)", text, re.I):     # the value tooltip's lines
+            gear_value = parse_amount(m[1])
+        elif m := re.match(r"\s*Inventory\W*([\d,]+)\s*$", text, re.I):
+            exact = parse_amount(m[1])
         elif (m := re.fullmatch(r"(\d{1,3})\s*%", text.strip())) and y < grid.y:
             weight = int(m[1])
-        elif y < grid.y and y > grid.y - 1.5 * grid.pitch and (v := parse_amount(text)) is not None:
+        elif (grid.y - 1.5 * grid.pitch < y < grid.y and grid.x + .4 * grid.pitch < x + left < grid.x + 1.5 * grid.pitch
+              and (v := parse_amount(text)) is not None):  # right of the coin icons, over the bag's first column
             balances.append((y, v))
-    return Snapshot(items, market_value, [v for _, v in sorted(balances)], weight)
+    balances = [v for _, v in sorted(balances)]  # gold's line is above silver's
+    gold, silver = (balances + [None, None])[:2] if len(balances) != 1 else (None, balances[0])
+    return Snapshot(items, equipment, silver, gold, exact or market_value, gear_value, weight, read_zone(img, reader))
 
 
-# Screen capture from WSL: PowerShell on the Windows side copies the screen to a PNG.
-# DPI-aware so a scaled display (125%, 150%) is captured at its real resolution.
-_CAPTURE = r"""
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-Add-Type 'using System.Runtime.InteropServices; public static class Dpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
-[void][Dpi]::SetProcessDPIAware()
-$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-[System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-$path = Join-Path $env:TEMP 'silver-eye.png'
-$bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-$path
-"""
+def read_zone(img, reader):
+    """The zone name from the location bar at the bottom right ("161 | Lymhurst Portal 13:23"),
+    or None when the image isn't a whole screen."""
+    h, w = img.shape[:2]
+    if w < 1000 or not 1.5 < w / h < 2.5:
+        return None
+    names = [t.strip() for _, _, t in reader.lines(img[int(h * .94):, int(w * .78):])
+             if re.fullmatch(r"[A-Za-z][A-Za-z' -]{2,}", t.strip())]
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", max(names, key=len)) if names else None  # OCR drops spaces
+
+
+# Screen capture from WSL: silver/capture.ps1 runs in Windows PowerShell and copies the screen
+# to a PNG whenever asked. It stays running, so a capture skips PowerShell's ~3 s startup.
+CAPTURE_SCRIPT = Path(__file__).with_name("capture.ps1")
 POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 
 
-def capture():
-    """The Windows primary screen as a BGR image. The game must be windowed or borderless:
+class Screen:
+    """The Windows primary screen, captured on demand. The game must be windowed or borderless:
     exclusive fullscreen can capture as black."""
-    out = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", _CAPTURE],
-                         capture_output=True, text=True, timeout=30, cwd="/mnt/c", check=True)
-    win_path = out.stdout.strip().splitlines()[-1]
-    path = subprocess.run(["wslpath", "-u", win_path], capture_output=True, text=True, check=True).stdout.strip()
-    img = cv2.imread(path)
-    os.remove(path)
-    if img is None:
-        raise RuntimeError("screen capture produced no image")
-    return img
+
+    def __init__(self):
+        self.proc, self.path = None, None
+
+    def capture(self):
+        """The screen as a BGR image (restarts the capture process if it died)."""
+        for attempt in (1, 2):
+            try:
+                if self.proc is None or self.proc.poll() is not None:
+                    script = subprocess.run(["wslpath", "-w", str(CAPTURE_SCRIPT)], capture_output=True,
+                                            text=True, check=True).stdout.strip()
+                    self.proc = subprocess.Popen(
+                        [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                        text=True, cwd="/mnt/c", bufsize=1)
+                self.proc.stdin.write("\n")
+                self.proc.stdin.flush()
+                win_path = self.proc.stdout.readline().strip()
+                if not win_path:
+                    raise RuntimeError("capture process ended")
+                self.path = self.path or subprocess.run(["wslpath", "-u", win_path], capture_output=True,
+                                                        text=True, check=True).stdout.strip()
+                img = cv2.imread(self.path)
+                if img is not None:
+                    return img
+                raise RuntimeError("screen capture produced no image")
+            except (OSError, RuntimeError, subprocess.CalledProcessError):
+                self.close()
+                if attempt == 2:
+                    raise
+
+    def close(self):
+        if self.proc:
+            self.proc.kill()
+            self.proc = None
+
+
+def capture():
+    """One capture (starts and stops PowerShell; use Screen to capture repeatedly)."""
+    screen = Screen()
+    try:
+        return screen.capture()
+    finally:
+        screen.close()
