@@ -15,6 +15,7 @@ Numbers (stack counts, balances, the game's own market value estimate) are read 
 
 Needs the `eye` extra: `uv sync --extra eye`.
 """
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -413,10 +414,24 @@ def read_zone(img, reader):
     return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", max(names, key=len)) if names else None  # OCR drops spaces
 
 
-# Screen capture from WSL: silver/capture.ps1 runs in Windows PowerShell and copies the screen
-# to a PNG whenever asked. It stays running, so a capture skips PowerShell's ~3 s startup.
+# Screen capture: silver/capture.ps1 runs in Windows PowerShell and copies the screen to a PNG
+# whenever asked, on Windows itself or from WSL. It stays running, so a capture skips
+# PowerShell's ~3 s startup.
 CAPTURE_SCRIPT = Path(__file__).with_name("capture.ps1")
-POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+NATIVE = os.name == "nt"
+POWERSHELL = "powershell.exe" if NATIVE else "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+
+
+def _windows_path(path):
+    """A path as Windows sees it (from WSL, via wslpath)."""
+    return str(path) if NATIVE else subprocess.run(["wslpath", "-w", str(path)], capture_output=True,
+                                                   text=True, check=True).stdout.strip()
+
+
+def _local_path(win_path):
+    """A Windows path as this process sees it."""
+    return win_path if NATIVE else subprocess.run(["wslpath", "-u", win_path], capture_output=True,
+                                                  text=True, check=True).stdout.strip()
 
 
 class Screen:
@@ -431,19 +446,17 @@ class Screen:
         for attempt in (1, 2):
             try:
                 if self.proc is None or self.proc.poll() is not None:
-                    script = subprocess.run(["wslpath", "-w", str(CAPTURE_SCRIPT)], capture_output=True,
-                                            text=True, check=True).stdout.strip()
                     self.proc = subprocess.Popen(
-                        [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script],
+                        [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                         "-File", _windows_path(CAPTURE_SCRIPT)],
                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                        text=True, cwd="/mnt/c", bufsize=1)
+                        text=True, cwd=None if NATIVE else "/mnt/c", bufsize=1)
                 self.proc.stdin.write("\n")
                 self.proc.stdin.flush()
                 win_path = self.proc.stdout.readline().strip()
                 if not win_path:
                     raise RuntimeError("capture process ended")
-                self.path = self.path or subprocess.run(["wslpath", "-u", win_path], capture_output=True,
-                                                        text=True, check=True).stdout.strip()
+                self.path = self.path or _local_path(win_path)
                 img = cv2.imread(self.path)
                 if img is not None:
                     return img

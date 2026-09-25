@@ -15,13 +15,12 @@ import json
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from . import config
 from .api import location_param, market_params, parse_price_row, parse_ts, positive_int
 from .db import Database
+from .paths import DATA_DIR
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DAY = 86400
 BACKFILL_DAYS = 120     # history the API keeps is about this deep
 FAIR_DAYS, FAIR_WIDE_DAYS, FAIR_MIN_POINTS = 14, 28, 3

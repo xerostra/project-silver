@@ -2321,7 +2321,7 @@ $("resRefresh").onclick = () => loadResources(true);
 
 (async function init() {
   try { CFG = await getJSON("/api/config"); }
-  catch (e) { document.querySelector("main").innerHTML = `<p class="error">Can't reach the local server: start it with <code>uv run python -m silver serve</code> and reload.</p>`; return; }
+  catch (e) { document.querySelector("main").innerHTML = `<p class="error">Can't reach the local server: start it with <code>silver</code> and reload.</p>`; return; }
   $("server").textContent = CFG.server + " · " + new URL(CFG.host).hostname;
   S.premium = store.get("premium", CFG.premium);
   S.capital = store.get("capital", CFG.capital);

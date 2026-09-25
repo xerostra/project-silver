@@ -14,8 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import config
+from .paths import DATA_DIR
 
-ARCHIVE_ROOT = Path(__file__).resolve().parent.parent / "data" / "killboard"
+ARCHIVE_ROOT = DATA_DIR / "killboard"
 SLOTS = ("MainHand", "OffHand", "Head", "Armor", "Shoes", "Cape", "Bag", "Mount", "Potion", "Food")
 
 

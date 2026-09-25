@@ -2,12 +2,12 @@
 import re
 import threading
 import time
-from pathlib import Path
 
 import requests
 
+from .paths import DATA_DIR
+
 ITEMS_URL = "https://raw.githubusercontent.com/ao-data/ao-bin-dumps/master/formatted/items.txt"
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 ITEMS_FILE = DATA_DIR / "items.txt"
 REFRESH_DAYS = 7
 

@@ -7,7 +7,7 @@ dies, so a crash never leaves it stuck.
 Progress is recorded in the databases (state table), so the dashboard can show it whichever
 process is collecting.
 """
-import fcntl
+import os
 import threading
 import time
 import traceback
@@ -20,14 +20,27 @@ HISTORY_SWEEP = 3 * 3600
 STALE = 15 * 60  # no sign of life from a collector for this long means it is down
 
 
+if os.name == "nt":
+    import msvcrt
+
+    def _lock(f):
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)  # the first byte; raises OSError if held
+else:
+    import fcntl
+
+    def _lock(f):
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
 def acquire_lock(path=None):
     """The collector lock as an open file, or None if another process holds it."""
     path = path or DATA_DIR / config.SERVER / "collector.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
-    f = open(path, "w")
+    f = open(path, "a+")  # never truncates: on Windows the holder's locked byte must stay put
     try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+        _lock(f)
+    except OSError:
         f.close()
         return None
     return f

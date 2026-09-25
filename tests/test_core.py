@@ -656,7 +656,7 @@ class ServerSmoke(unittest.TestCase):
 
 class Toolkit(unittest.TestCase):
     """web/silver.css: every token used is defined, and every theme keeps text readable."""
-    WEB = Path(__file__).resolve().parent.parent / "web"
+    WEB = Path(__file__).resolve().parent.parent / "silver" / "web"
     TEXT_ROLES = ("--text", "--muted", "--accent", "--good", "--info", "--warn", "--bad")  # 4.5:1, WCAG AA
 
     @classmethod
@@ -1247,3 +1247,19 @@ class MakeOrBuy(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DataFolder(unittest.TestCase):
+    def test_source_checkout_env_and_installed_locations(self):
+        from silver import paths
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, site = Path(tmp) / "repo", Path(tmp) / "site-packages"
+            (repo / "silver").mkdir(parents=True)
+            (repo / "pyproject.toml").touch()
+            (repo / ".git").mkdir()
+            (site / "silver").mkdir(parents=True)
+            self.assertEqual(paths.data_dir({}, "linux", repo / "silver"), repo / "data")
+            self.assertEqual(paths.data_dir({"SILVER_DATA": "/x"}, "linux", repo / "silver"), Path("/x"))
+            self.assertEqual(paths.data_dir({"LOCALAPPDATA": "C:/Users/a/AppData/Local"}, "win32", site / "silver"),
+                             Path("C:/Users/a/AppData/Local/Silver"))
+            self.assertEqual(paths.data_dir({"XDG_DATA_HOME": "/d"}, "linux", site / "silver"), Path("/d/silver"))

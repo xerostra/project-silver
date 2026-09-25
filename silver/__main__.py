@@ -1,4 +1,6 @@
-"""python -m silver serve          -> dashboard at http://localhost:8765 (collects too, unless
+"""silver                          -> the dashboard in its own window (starts it if it isn't running)
+silver shortcut                 -> add Silver to the Windows Start menu
+python -m silver serve          -> dashboard at http://localhost:8765 (collects too, unless
                                     another process already is)
 python -m silver collect        -> collection only, for running 24/7 under a supervisor
 python -m silver scan           -> full market scan, best flips printed to the terminal
@@ -6,10 +8,17 @@ python -m silver rebuild-kills  -> recompute the killboard and Meta counters fro
 python -m silver backup DIR     -> consistent copy of everything collected, safe while running
 python -m silver eye [IMAGE]    -> read the inventory off the screen (or a screenshot) and value it"""
 import argparse
+import os
 import shutil
 import signal
+import subprocess
+import sys
 import threading
 import time
+import webbrowser
+from pathlib import Path
+
+import requests
 
 from . import collect, config, flips
 from .api import AlbionAPI, APIError
@@ -85,11 +94,11 @@ def cmd_rebuild_kills(args):
 def cmd_backup(args):
     """SQLite's VACUUM INTO makes a consistent copy even while the collector writes; archive
     files are append-only, so any not yet in the backup are copied as they are."""
-    from pathlib import Path
+    from .sessions import Sessions
     dest = Path(args.dest) / config.SERVER
     dest.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M")
-    for db in (Store(), KillStore()):
+    for db in (Store(), KillStore(), Sessions()):
         target = dest / f"{db.path.stem}-{stamp}.db"
         db.db.execute("VACUUM INTO ?", (str(target),))
         print(f"{db.path.name} -> {target}")
@@ -101,6 +110,49 @@ def cmd_backup(args):
             shutil.copy2(f, out)
             copied += 1
     print(f"kill archive: {copied} new or grown files -> {dest / 'killboard'}")
+
+
+def open_window(url):
+    """The dashboard in its own window (Edge or Chrome app mode: no tabs or address bar), else
+    in the default browser."""
+    if os.name == "nt":
+        roots = [os.environ.get(k) for k in ("ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA")]
+        for exe in [shutil.which("msedge"), shutil.which("chrome")] + [
+                str(Path(r) / sub) for r in roots if r
+                for sub in ("Microsoft/Edge/Application/msedge.exe", "Google/Chrome/Application/chrome.exe")]:
+            if exe and Path(exe).is_file():
+                subprocess.Popen([exe, f"--app={url}"])
+                return
+    webbrowser.open(url)
+
+
+def running_at(url):
+    try:
+        return "server" in requests.get(f"{url}/api/config", timeout=2).json()
+    except (requests.RequestException, ValueError):
+        return False
+
+
+def cmd_app(args):
+    url = f"http://localhost:{args.port}"
+    if running_at(url):  # already up (another window, or the collector's dashboard): just show it
+        open_window(url)
+        return
+    from .server import serve
+    serve("127.0.0.1", args.port, on_ready=lambda: open_window(url))
+
+
+def cmd_shortcut(args):
+    if os.name != "nt":
+        raise SystemExit("The Start-menu shortcut is for Windows.")
+    exe = shutil.which("silver") or sys.argv[0]
+    link = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Silver.lnk"
+    quote = lambda p: str(p).replace("'", "''")
+    subprocess.run(["powershell", "-NoProfile", "-Command",
+                    f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{quote(link)}'); "
+                    f"$s.TargetPath = '{quote(exe)}'; $s.WorkingDirectory = '{quote(Path.home())}'; "
+                    "$s.Description = 'Project Silver'; $s.Save()"], check=True)
+    print(f"Added {link.stem} to the Start menu.")
 
 
 def cmd_eye(args):
@@ -155,7 +207,11 @@ def main():
     parser = argparse.ArgumentParser(prog="silver", description="Albion Online market and PvP tools")
     parser.add_argument("--server", choices=sorted(config.SERVERS), default=config.SERVER,
                         help="game server (default: %(default)s)")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub = parser.add_subparsers(dest="cmd")  # none: the app
+
+    p = sub.add_parser("app", help="the dashboard in its own window, started if needed (the default)")
+    p.add_argument("--port", type=int, default=8765)
+    sub.add_parser("shortcut", help="add Silver to the Windows Start menu")
 
     p = sub.add_parser("serve", help="run the local dashboard")
     p.add_argument("--host", default="127.0.0.1", help="use 0.0.0.0 if Windows can't reach WSL on localhost")
@@ -183,7 +239,11 @@ def main():
     args = parser.parse_args()
     config.select(args.server)
     try:
-        if args.cmd == "serve":
+        if args.cmd in (None, "app"):
+            cmd_app(argparse.Namespace(port=getattr(args, "port", 8765)))
+        elif args.cmd == "shortcut":
+            cmd_shortcut(args)
+        elif args.cmd == "serve":
             from .server import serve
             serve(args.host, args.port)
         elif args.cmd == "collect":

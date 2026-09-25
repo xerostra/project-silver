@@ -19,7 +19,9 @@ from urllib.parse import quote
 
 import requests
 
-DIR = Path(__file__).resolve().parent.parent / "data" / "icons"
+from .paths import DATA_DIR
+
+DIR = DATA_DIR / "icons"
 RENDER = "https://render.albiononline.com/v1/item/{}.png?quality=1&size=64"
 ITEM_ID = re.compile(r"[A-Z0-9_]+(@[1-4])?")  # also keeps request paths out of anywhere but DIR
 PNG = b"\x89PNG\r\n\x1a\n"

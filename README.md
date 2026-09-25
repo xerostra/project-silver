@@ -3,22 +3,38 @@
 Albion Online market and PvP tools, **Asia server** by default (`--server americas|europe` for the others), built on the
 [Albion Online Data Project](https://www.albion-online-data.com/api/) API (`east.albion-online-data.com`).
 
-## Run
+## Install (Windows)
+
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/), once, in PowerShell:
+   `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+2. Install Silver: `uv tool install "project-silver @ git+https://github.com/<owner>/project-silver"`
+3. Run `silver`: it starts collecting and opens the dashboard in its own window (Edge or Chrome
+   app mode). `silver shortcut` adds it to the Start menu. Keep the console window open while
+   you use it; closing it stops Silver.
+
+The first start downloads game data and about four months of price history (a minute or two).
+Your data lives in `%LOCALAPPDATA%\Silver`; everything is local to your PC. Update with
+`uv tool upgrade project-silver`. For the screen-reading eye, install `project-silver[eye]` instead.
+
+## Run from source
 
 ```bash
-uv run python -m silver serve          # dashboard at http://localhost:8765 (also collects, see below)
-                                       # UI toolkit reference (web/silver.css) at /kit
-uv run python -m silver collect        # collection only, for running 24/7
-uv run python -m silver --server europe serve   # another server (americas, europe; default asia)
-uv run python -m silver scan           # full market scan, best flips in the terminal
-uv run python -m silver scan --strategy instant --max-age 1 --min-volume 50 --capital 2000000
-uv run python -m silver backup /mnt/c/Users/you/silver-backup   # copy everything collected (safe while running)
-uv run python -m silver rebuild-kills  # recompute the killboard and Meta from the raw kill archive
+uv run silver                          # the dashboard in its own window, started if needed
+uv run silver serve                    # just the server, at http://localhost:8765 (also collects, see below)
+                                       # UI toolkit reference (silver/web/silver.css) at /kit
+uv run silver collect                  # collection only, for running 24/7
+uv run silver --server europe serve    # another server (americas, europe; default asia)
+uv run silver scan                     # full market scan, best flips in the terminal
+uv run silver scan --strategy instant --max-age 1 --min-volume 50 --capital 2000000
+uv run silver backup /mnt/c/Users/you/silver-backup   # copy everything collected (safe while running)
+uv run silver rebuild-kills            # recompute the killboard and Meta from the raw kill archive
 ```
 
 Needs Python 3.10+ and [uv](https://docs.astral.sh/uv/): `uv sync` installs the pinned dependencies
 (`pyproject.toml`, `uv.lock`) into `.venv`, and `uv run` uses them. Add a dependency with `uv add <name>`.
-Tests: `uv run python -m unittest discover tests`.
+From a source checkout, data lives in the repo's `data/`; installed, in the user's data folder
+(`silver/paths.py`); `SILVER_DATA` overrides both.
+Tests: `uv run python -m unittest discover tests` (add `--extra eye` for the eye's).
 If your Windows browser can't reach WSL on localhost, run `serve --host 0.0.0.0`.
 
 ## Dashboard
@@ -240,7 +256,7 @@ kill archive and history older than the API's ~4-month window exist nowhere else
 
 ## The eye (inventory from the screen)
 
-`uv sync --extra eye` once, then `uv run --extra eye python -m silver eye` reads the inventory and worn
+`uv sync --extra eye` once, then `uv run --extra eye silver eye` reads the inventory and worn
 gear off your screen and values them (`--every 5` keeps reading; pass a PNG path to read a screenshot
 instead). It also reads your silver and gold, the zone, and the game's own value estimates.
 Open your bag in game, windowed or borderless: exclusive fullscreen can capture as black.
@@ -263,7 +279,7 @@ Tested against two real 1080p captures in `tests/fixtures/`: every item, tier, e
 ## Sessions, goals and the overlay
 
 The **Session** tab tracks a stretch of play. Press **Start session**: while it runs, the eye (if
-installed: start the dashboard with `uv run --extra eye python -m silver serve`) reads your screen
+installed: start the dashboard with `uv run --extra eye silver serve`) reads your screen
 every 5 seconds and, whenever your inventory is open, records your silver, gold, zone and every
 item in your bag and worn gear. Without the eye, type your silver at the start and end instead.
 

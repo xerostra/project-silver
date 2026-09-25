@@ -45,7 +45,7 @@ from .api import AlbionAPI, APIError, GameInfo
 from .killstore import Collector, KillStore
 from .store import ALL, Store, sync_history, sync_prices
 
-WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+WEB_DIR = Path(__file__).resolve().parent / "web"
 HTML, CSS = "text/html; charset=utf-8", "text/css; charset=utf-8"
 PAGES = {  # URL path -> (file in WEB_DIR, content type)
     "/": ("index.html", HTML), "/index.html": ("index.html", HTML),
@@ -691,7 +691,7 @@ class Handler(BaseHTTPRequestHandler):
         pass  # keep the terminal quiet
 
 
-def serve(host="127.0.0.1", port=8765):
+def serve(host="127.0.0.1", port=8765, on_ready=None):
     try:
         server = ThreadingHTTPServer((host, port), Handler)
     except OSError as exc:
@@ -718,6 +718,8 @@ def serve(host="127.0.0.1", port=8765):
     print("Ctrl+C to stop. If another process is collecting, this one only serves, and takes over if it stops.",
           flush=True)
     signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown).start())
+    if on_ready:
+        threading.Thread(target=on_ready, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
