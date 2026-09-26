@@ -396,6 +396,23 @@ class FocusPlanner(unittest.TestCase):
         empty = focus.Market({}, {}, now=NOW)
         self.assertIsNone(focus.craft_use(self.BAR, empty))                          # no prices
 
+    def test_typical_prices_fill_in_only_where_nothing_is_live(self):
+        fair = {"T5_ORE": {"Martlock": {"price": 999, "vol": 5}},
+                "T4_METALBAR": {"Lymhurst": {"price": 450, "vol": 9}, "Thetford": {"price": 480, "vol": 2}},
+                "T5_METALBAR": {"Thetford": {"price": 2000, "vol": 40}}}
+        live = self.market(2000)
+        live.fair = fair
+        self.assertEqual((live.ask("T5_ORE"), live.estimated), (400, set()))       # a fresh ask wins
+        blind = focus.Market({}, {}, premium=True, now=NOW, fair=fair)
+        self.assertEqual(blind.ask("T4_METALBAR"), 450)                              # cheapest typical city
+        self.assertAlmostEqual(blind.sale("T5_METALBAR"), 2000 * (1 - 0.04 - 0.025))  # as a sell order
+        self.assertEqual(blind.daily_volume("T4_METALBAR"), 9)
+        self.assertEqual(blind.estimated, {"T4_METALBAR", "T5_METALBAR"})
+        use = focus.craft_use(self.BAR, blind)
+        self.assertTrue(use["est"])
+        self.assertFalse(focus.craft_use(self.BAR, self.market(2000))["est"])
+        self.assertIsNone(focus.Market({}, {}, now=NOW).ask("T5_ORE"))              # nothing at all: still None
+
     def test_plan_is_greedy_within_caps(self):
         uses = [{"kind": "Refine", "id": "A", "focus": 100, "gain": 500, "per_focus": 5, "daily_cap": 3},
                 {"kind": "Water", "id": "B", "focus": 1000, "gain": 3000, "per_focus": 3, "daily_cap": None},
@@ -403,6 +420,8 @@ class FocusPlanner(unittest.TestCase):
         p = focus.plan(uses, daily_focus=2500, farm_slots=1)
         self.assertEqual([(s["id"], s["times"]) for s in p["steps"]], [("A", 3), ("B", 1)])
         self.assertEqual((p["focus_used"], p["silver"]), (1300, 3 * 500 + 3000))   # C has no known volume
+        guessed = [{**uses[0], "est": True}] + uses[1:]
+        self.assertEqual([s["id"] for s in focus.plan(guessed, 2500, farm_slots=1)["steps"]], ["B"])  # estimates stay out
 
 
 class Determinism(unittest.TestCase):

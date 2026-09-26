@@ -159,6 +159,15 @@ def plant_result(plant, sell, buy, premium, water):
             "focus_value": plant["focus_bonus"] * seed / plant["focus_cost"] if plant["focus_cost"] else 0}
 
 
+def plant_items(plant):
+    """Every item a plant's result is priced from (to tell whether any price was an estimate)."""
+    return [plant["crop"], plant["id"], *(i for i, _ in plant["extras"])]
+
+
+def animal_items(animal, result):
+    return [animal["grown"], animal["id"], result["feed"]]
+
+
 def cheapest_feed(foods, category, price):
     """Cheapest silver per nutrition among foods of a category: (item id, silver per nutrition)."""
     best = None

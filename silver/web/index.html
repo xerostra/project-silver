@@ -160,7 +160,7 @@
       <span class="meta" id="farmMeta"></span>
       <button class="btn" id="farmRefresh">Refresh</button>
     </div>
-    <p class="hint">Per seed or baby. Crops return 3–6 (6–12 with premium); watering adds seed-return chance, and over 100% means a chance of a second seed. Animals eat the cheapest accepted food (every crop is 48 nutrition, meat 52); focused feedings add offspring chance, and exotic mounts can only be bred with focus. Outputs are valued at the 7-day average; seeds, babies and feed at what they cost to buy, never more than the NPC price.</p>
+    <p class="hint">Per seed or baby. Crops return 3–6 (6–12 with premium); watering adds seed-return chance, and over 100% means a chance of a second seed. Animals eat the cheapest accepted food (every crop is 48 nutrition, meat 52); focused feedings add offspring chance, and exotic mounts can only be bred with focus. Outputs are valued at the 7-day average; seeds, babies and feed at what they cost to buy, never more than the NPC price. Where something hasn't been listed or traded lately, its typical traded price is used and the result marked <b>~</b>; rows left blank have never traded in the data we hold.</p>
     <h3 class="section-title">Crops &amp; herbs</h3>
     <div class="table-wrap"><table id="farmPlants"></table></div>
     <h3 class="section-title">Animals</h3>
@@ -192,7 +192,7 @@
       <button class="btn" id="labRefresh">Refresh</button>
     </div>
     <div class="table-wrap"><table id="labTable2"></table></div>
-    <p class="hint">A laborer takes one full journal and brings back <b>base × yield</b> items drawn from the journal's loot table, or silver for a mercenary. Yield = happiness ÷ <span id="labFullPts"></span>, capped at <span id="labMaxYield"></span>; happiness comes from the bed, the table and trophies. <b>Use vs sell</b> compares giving the journal to a laborer against selling it full, so you can pick the better of the two once you've filled one. Hover a row for the full breakdown.</p>
+    <p class="hint">A laborer takes one full journal and brings back <b>base × yield</b> items drawn from the journal's loot table, or silver for a mercenary. Yield = happiness ÷ <span id="labFullPts"></span>, capped at <span id="labMaxYield"></span>; happiness comes from the bed, the table and trophies. <b>Use vs sell</b> compares giving the journal to a laborer against selling it full, so you can pick the better of the two once you've filled one. Where nothing is listed or traded lately, typical traded prices stand in, marked <b>~</b>. Hover a row for the full breakdown.</p>
   </section>
 
   <!-- HEARTS & ROYAL TRANSPORTS -->
@@ -358,6 +358,21 @@ const short = (n) => {
   return fmt(n);
 };
 const pct = (x) => (x * 100).toFixed(Math.abs(x) < 0.1 ? 1 : 0) + "%";
+// Estimates: where nothing is listed or traded lately, pages use the item's typical (fair) price
+// and mark the result ~, in italics, with this on hover.
+const EST_TIP = "Estimate: nothing is listed or traded lately for part of this, so its typical traded price is used. Check the market in game.";
+const estAttr = (est) => est ? ` class="est" title="${EST_TIP}"` : "";
+// Silver with sign and tone (and the estimate mark), or a dash.
+const silverCell = (v, est) => v == null ? '<span class="none">–</span>'
+  : `<span class="${v >= 0 ? "profit" : "loss"}${est ? " est" : ""}"${est ? ` title="${EST_TIP}"` : ""}>${est ? "~" : ""}${v >= 0 ? "+" : ""}${fmt(v)}</span>`;
+// The typical (fair) price of an item from a payload's `fair` map: in the best of `cities` by
+// `better`, else pooled over all cities. {price, city, vol, est: true} or null.
+function typicalOf(fair, id, cities, better) {
+  const f = fair?.[id] || {};
+  let best = null;
+  for (const c of cities) if (f[c]?.price && (!best || better(f[c].price, best.price))) best = { price: f[c].price, city: c, vol: f[c].vol, est: true };
+  return best || (f[""]?.price ? { price: f[""].price, city: null, vol: f[""].vol, est: true } : null);
+}
 const pct1 = (x) => (x * 100).toFixed(1) + "%";
 const ageOf = (ts) => ts ? Date.now() / 1000 - ts : Infinity;
 const ageTxt = (ts) => {
@@ -1023,11 +1038,7 @@ function materialPrice(id) {
 // Fallback where nothing fresh is listed: the fair (typical traded) price, cheapest or dearest
 // of the given cities as `better` says, else pooled across cities. Marked est so the page shows ~.
 function typicalPrice(id, cities, better) {
-  if (!$("cFair").checked) return null;
-  const f = CRAFT.fair?.[id] || {};
-  let best = null;
-  for (const c of cities) if (f[c] && (!best || better(f[c], best.price))) best = { price: f[c], city: c, est: true };
-  return best || (f[""] ? { price: f[""], city: null, est: true } : null);
+  return $("cFair").checked ? typicalOf(CRAFT.fair, id, cities, better) : null;
 }
 
 // Best net silver for one unit of the product after fees: {net, gross, city} or null.
@@ -1042,11 +1053,11 @@ function productSale(id) {
     if (order && c !== "Black Market" && x.sell && fresh(x.sell_at)) gross = v[c] ? Math.min(x.sell, v[c].avg) : x.sell;
     else if (!order && x.buy && fresh(x.buy_at)) gross = x.buy;
     const net = gross && sellNet(gross, order);
-    if (net && (!best || net > best.net)) best = { net, gross, city: c, vol: v[c]?.vol };
+    if (net && (!best || net > best.net)) best = { net, gross, city: c, vol: v[c]?.vol ?? CRAFT.fair?.[id]?.[c]?.vol };
   }
   if (best) return best;
   const t = typicalPrice(id, markets.filter((c) => !order || c !== "Black Market"), (a, b) => a > b);
-  return t && { net: sellNet(t.price, order), gross: t.price, city: t.city || "typical", vol: v[t.city]?.vol, est: true };
+  return t && { net: sellNet(t.price, order), gross: t.price, city: t.city || "typical", vol: t.vol, est: true };
 }
 
 // One line per ingredient: icon, how many, the city to buy it in (or make it) and the price there.
@@ -1513,14 +1524,16 @@ function labSale(id) {
     else if (mode === "instant" && p.buy && fresh(p.buy_at)) { gross = p.buy; viaOrder = false; }
     if (gross && (!best || sellNet(gross, viaOrder) > best.net)) best = { net: sellNet(gross, viaOrder), city };
   }
-  return best;
+  if (best) return best;
+  const t = typicalOf(LAB.fair, id, CFG.cities, (a, b) => a > b);  // listed as a sell order
+  return t && { net: sellNet(t.price, true), city: t.city || "typical", est: true };
 }
 function labAsk(id) {
   let best = null;
   for (const [city, p] of Object.entries(LAB.prices[id] || {})) {
     if (p.sell && fresh(p.sell_at) && (!best || p.sell < best.price)) best = { price: p.sell, city };
   }
-  return best;
+  return best || typicalOf(LAB.fair, id, CFG.cities, (a, b) => a < b);
 }
 
 function labHappiness() {
@@ -1533,12 +1546,15 @@ function labHappiness() {
 
 function labRow(job, yieldMult) {
   const units = job.base * yieldMult, lines = [];
-  let value = 0, unpriced = 0;
+  let value = 0, unpriced = 0, est = false;
   for (const [id, amount, share] of job.loot) {
     const n = units * share * amount, sale = labSale(id);
     if (!sale) { if (share > 0.01) unpriced += share; continue; }  // ignore rare enchant rolls with no price
     value += n * sale.net;
-    if (share > 0.01) lines.push(`${n.toFixed(1)} × ${LAB.names[id] || id} @ ${fmt(sale.net)} net (${sale.city})`);
+    if (share > 0.01) {
+      est ||= !!sale.est;
+      lines.push(`${n.toFixed(1)} × ${LAB.names[id] || id} @ ${sale.est ? "~" : ""}${fmt(sale.net)} net (${sale.est ? "typical" : sale.city})`);
+    }
   }
   if (job.silver) { value += units * job.silver; lines.push(`${fmt(units * job.silver)} silver`); }
 
@@ -1546,15 +1562,18 @@ function labRow(job, yieldMult) {
   const full = labAsk(job.full), emptyAsk = labAsk(job.empty);
   const emptyCost = Math.min(job.empty_silver || Infinity, emptyAsk?.price ?? Infinity);
   const cost = buying ? full?.price ?? null : (isFinite(emptyCost) ? emptyCost : null);
+  const costEst = buying ? !!full?.est : !!(emptyAsk?.est && emptyAsk.price < job.empty_silver);
   const complete = unpriced < 0.05;  // at least 95% of the loot is priced
   const profit = complete && cost != null ? value - cost : null;
   const fullBid = Object.entries(LAB.prices[job.full] || {})
     .filter(([, p]) => p.buy && fresh(p.buy_at)).sort((a, b) => b[1].buy - a[1].buy)[0];
-  const sellFull = fullBid ? { net: sellNet(fullBid[1].buy, false) } : null;
+  const typicalFull = !fullBid && typicalOf(LAB.fair, job.full, CFG.cities, (a, b) => a > b);
+  const sellFull = fullBid ? { net: sellNet(fullBid[1].buy, false) } : typicalFull ? { net: sellNet(typicalFull.price, true), est: true } : null;
   lines.push(buying ? `Full journal: ${full ? fmt(full.price) + " (" + full.city + ")" : "no listing"}`
     : `Empty journal: ${fmt(emptyCost)}${emptyAsk && emptyAsk.price < job.empty_silver ? " (market)" : " (NPC)"} · ${fmt(job.fame)} fame to fill`);
   return {
     job, units, value, cost, profit, complete, tip: lines.join("\n"),
+    est: est || costEst, valueEst: est, costEst, sellEst: !!sellFull?.est,
     roi: profit != null && cost ? profit / cost : null,
     perFame: !buying && profit != null && job.fame ? profit / job.fame * 1000 : null,
     sellFull: sellFull ? sellFull.net : null,
@@ -1592,23 +1611,23 @@ function renderLaborers() {
   const col = sortedBy(LCOLS, LB, "profit");
   rows.sort(comparator(col, LB, (a, b) => cmpVal(a.job.id, b.job.id)));
 
-  const signed = (v, cls = true) => v == null ? '<span class="none">–</span>'
-    : `<span class="${cls ? (v >= 0 ? "profit" : "loss") : ""}">${v >= 0 ? "+" : ""}${fmt(v)}</span>`;
   const body = rows.map((x) => {
     const main = x.job.loot[0];
+    const useEst = x.valueEst || x.sellEst;
     const returns = x.job.silver && !x.job.loot.length ? `${fmt(x.units * x.job.silver)} silver`
       : `${x.units.toFixed(1)} × ${esc(LAB.names[main?.[0]] || main?.[0] || "?")}${x.job.loot.length > 1 ? " …" : ""}`;
     return `<tr title="${esc(x.tip)}">
       <td class="left"><div class="item">${iconImg(x.job.full)}
         <span class="tier">T${x.job.tier}</span><span class="name">${esc(x.job.laborer)}</span></div></td>
       <td class="left">${returns}</td>
-      <td class="num">${x.complete ? fmt(x.value) : '<span class="none">missing prices</span>'}</td>
-      <td class="num">${x.cost != null ? fmt(x.cost) : '<span class="none">no listing</span>'}</td>
-      <td class="num">${signed(x.profit)}</td>
+      <td class="num">${x.complete ? `<span${estAttr(x.valueEst)}>${x.valueEst ? "~" : ""}${fmt(x.value)}</span>` : '<span class="none">missing prices</span>'}</td>
+      <td class="num">${x.cost != null ? `<span${estAttr(x.costEst)}>${x.costEst ? "~" : ""}${fmt(x.cost)}</span>` : '<span class="none">no listing</span>'}</td>
+      <td class="num">${silverCell(x.profit, x.est)}</td>
       <td class="num">${x.roi != null ? pct(x.roi) : "–"}</td>
       <td class="num">${x.perFame != null ? fmt(x.perFame) : '<span class="none">–</span>'}</td>
-      <td class="num" title="${x.sellFull ? "Selling it full nets " + fmt(x.sellFull) : "No buy order for full journals"}">${
-        x.useVsSell == null ? '<span class="none">–</span>' : x.useVsSell >= 0 ? `<span class="profit">use +${fmt(x.useVsSell)}</span>` : `<span class="loss">sell +${fmt(-x.useVsSell)}</span>`}</td>
+      <td class="num" title="${x.sellFull ? `Selling it full nets ${x.sellEst ? "about " : ""}${fmt(x.sellFull)}` : "No price for full journals"}">${
+        x.useVsSell == null ? '<span class="none">–</span>'
+          : `<span class="${x.useVsSell >= 0 ? "profit" : "loss"}${useEst ? " est" : ""}">${useEst ? "~" : ""}${x.useVsSell >= 0 ? "use +" + fmt(x.useVsSell) : "sell +" + fmt(-x.useVsSell)}</span>`}</td>
     </tr>`;
   }).join("");
   $("labTable2").innerHTML = sortHead(LCOLS, LB, col) + `<tbody>${body || `<tr><td class="left none" colspan="99">No journals match these filters.</td></tr>`}</tbody>`;
@@ -1677,7 +1696,7 @@ async function loadFarming(refresh = false) {
 
 function renderFarming() {
   if (!FARM) return;
-  const money = (v) => v == null ? '<span class="none">–</span>' : `<span class="${v >= 0 ? "profit" : "loss"}">${v >= 0 ? "+" : ""}${fmt(v)}</span>`;
+  const money = (v, r) => silverCell(v, r?.est);
   const byProfit = (a, b) => (b.result?.profit ?? -Infinity) - (a.result?.profit ?? -Infinity) || cmpVal(a.id, b.id);
   const plants = [...FARM.plants].sort(byProfit).map((p) => {
     const r = p.result;
@@ -1686,9 +1705,9 @@ function renderFarming() {
       <td class="left">${esc(p.kind)}</td>
       <td class="num">${r ? r.harvest.toFixed(1) : "–"}</td>
       <td class="num">${r ? pct(r.seeds_back) : "–"}</td>
-      <td class="num">${r ? fmt(r.revenue) : '<span class="none">no price</span>'}</td>
+      <td class="num">${r ? `<span${estAttr(r.est)}>${r.est ? "~" : ""}${fmt(r.revenue)}</span>` : '<span class="none">no price</span>'}</td>
       <td class="num">${r ? fmt(r.cost) : "–"}</td>
-      <td class="num">${money(r?.profit)}</td>
+      <td class="num">${money(r?.profit, r)}</td>
       <td class="num">${r ? r.focus_value.toFixed(1) : "–"}</td></tr>`;
   }).join("");
   $("farmPlants").innerHTML = `<thead><tr><th class="left">Crop</th><th class="left">Type</th><th>Harvest</th><th>Seeds back</th>
@@ -1701,10 +1720,10 @@ function renderFarming() {
       <td class="num">${a.days.toFixed(1)}d</td>
       <td class="num">${r ? pct(r.offspring) : "–"}</td>
       <td class="num">${r ? fmt(r.feed_cost) : "–"}</td>
-      <td class="num">${r ? fmt(r.revenue) : '<span class="none">no price</span>'}</td>
+      <td class="num">${r ? `<span${estAttr(r.est)}>${r.est ? "~" : ""}${fmt(r.revenue)}</span>` : '<span class="none">no price</span>'}</td>
       <td class="num">${r ? fmt(r.cost) : "–"}</td>
-      <td class="num">${money(r?.profit)}</td>
-      <td class="num">${r ? money(r.profit / a.days) : "–"}</td>
+      <td class="num">${money(r?.profit, r)}</td>
+      <td class="num">${r ? money(r.profit / a.days, r) : "–"}</td>
       <td class="num">${r ? r.focus_value.toFixed(1) : "–"}</td></tr>`;
   }).join("");
   $("farmAnimals").innerHTML = `<thead><tr><th class="left">Animal</th><th>Grows</th><th>Offspring</th><th>Feed</th>
@@ -1752,17 +1771,18 @@ function renderFocus(d) {
   const p = d.plan;
   $("fPlanSummary").innerHTML = p.steps.length
     ? `Spend <b>${fmt(p.focus_used)}</b> of ${fmt(+$("fDaily").value)} focus for about <b class="profit">+${fmt(p.silver)}</b> silver more than without focus.`
-    : "Nothing in the plan: either no use has known market volume, or enter free farm/pasture slots.";
+      + (d.uses.some((u) => u.est) ? ` Uses priced from typical prices (~) are listed below but left out of the plan.` : "")
+    : "Nothing in the plan: either no use has known market volume and live prices, or enter free farm/pasture slots.";
   $("fPlan").innerHTML = p.steps.length ? `<thead><tr><th class="left">Do</th><th class="left">Item</th><th class="left">Where</th>
       <th>Times</th><th>Focus</th><th>Silver added</th></tr></thead><tbody>${p.steps.map((s) => `<tr>
       <td class="left">${esc(s.kind)}</td><td class="left">${item(s)}</td><td class="left">${where(s)}</td>
       <td class="num">${fmt(s.times)}</td><td class="num">${fmt(s.focus_used)}</td>
-      <td class="num profit">+${fmt(s.silver)}</td></tr>`).join("")}</tbody>` : "";
+      <td class="num">${silverCell(s.silver, s.est)}</td></tr>`).join("")}</tbody>` : "";
   $("fUses").innerHTML = `<thead><tr><th class="left">Do</th><th class="left">Item</th><th class="left">Where</th>
       <th>Silver / focus</th><th>Focus each</th><th>Focus adds</th><th>Profit with focus</th><th>Without</th><th>Max / day</th></tr></thead>
     <tbody>${d.uses.map((u) => `<tr>
       <td class="left">${esc(u.kind)}</td><td class="left">${item(u)}</td><td class="left">${where(u)}</td>
-      <td class="num profit">${u.per_focus.toFixed(1)}</td><td class="num">${fmt(u.focus)}</td>
+      <td class="num profit"><span${estAttr(u.est)}>${u.est ? "~" : ""}${u.per_focus.toFixed(1)}</span></td><td class="num">${fmt(u.focus)}</td>
       <td class="num">+${fmt(u.gain)}</td><td class="num">${fmt(u.profit_with)}</td>
       <td class="num ${u.profit_without < 0 ? "loss" : ""}">${fmt(u.profit_without)}</td>
       <td class="num">${u.daily_cap ?? '<span class="none">slots</span>'}</td></tr>`).join("")}</tbody>`;
@@ -1836,7 +1856,7 @@ function renderTransports() {
       <td class="num">${profit == null ? "–" : fmt(profit / (2 * r.hops))}</td>
     </tr>`;
   }).join("");
-  $("trTable").innerHTML = `<thead><tr><th class="left">From</th><th class="left">To</th><th>Zones</th><th class="left">Path</th>
+  $("trTable").innerHTML = `<thead><tr><th class="left">From</th><th class="left">To</th><th>Zones</th><th class="left" title="Zones along the shortest path by danger; hover a row for the path itself">Risk on the way</th>
     <th class="left">Pack</th><th>You pay</th><th>You get</th><th>Profit</th><th>Per zone travelled</th></tr></thead>
     <tbody>${body || `<tr><td class="left none" colspan="99">No route matches these filters.</td></tr>`}</tbody>`;
 }

@@ -18,22 +18,36 @@ from . import config, crafting, farming
 
 
 class Market:
-    """Price lookups over a snapshot: {item: {city: price row}} and {item: {city: history}}."""
+    """Price lookups over a snapshot: {item: {city: price row}} and {item: {city: history}}.
 
-    def __init__(self, prices, volumes, premium=True, max_age_hours=6, now=None):
-        self.prices, self.volumes = prices, volumes
+    Live data first. Where there is none (nothing listed lately, no trades this week: common in
+    thin markets), `fair` ({item: {city or "": {price, vol}}}, the store's typical traded prices)
+    stands in, and the item is recorded in `estimated` so results can be marked as estimates."""
+
+    def __init__(self, prices, volumes, premium=True, max_age_hours=6, now=None, fair=None):
+        self.prices, self.volumes, self.fair = prices, volumes, fair or {}
         self.tax = config.SALES_TAX_PREMIUM if premium else config.SALES_TAX_NO_PREMIUM
         self.oldest = (time.time() if now is None else now) - max_age_hours * 3600
+        self.estimated = set()
+
+    def _typical(self, item, cities, pick):
+        typical = [v["price"] for c, v in self.fair.get(item, {}).items() if c in cities and v.get("price")]
+        pooled = self.fair.get(item, {}).get("", {}).get("price")
+        if typical or pooled:
+            self.estimated.add(item)
+            return pick(typical) if typical else pooled
+        return None
 
     def ask(self, item, cities=config.CITIES):
-        """Cheapest fresh sell order: what buying one costs now."""
+        """Cheapest fresh sell order: what buying one costs now (else its typical price)."""
         asks = [p["sell"] for c, p in self.prices.get(item, {}).items()
                 if c in cities and p.get("sell") and (p.get("sell_at") or 0) >= self.oldest]
-        return min(asks) if asks else None
+        return min(asks) if asks else self._typical(item, cities, min)
 
     def sale(self, item):
         """Net silver for selling one over time: 7-day average listed as a sell order (tax +
-        setup fee), else a fresh buy order (tax only). Best market wins."""
+        setup fee), else a fresh buy order (tax only), else its typical price as a sell order.
+        Best market wins."""
         best = None
         for city, h in self.volumes.get(item, {}).items():
             net = h["avg"] * (1 - self.tax - config.SETUP_FEE)
@@ -43,11 +57,18 @@ class Market:
                 if p.get("buy") and (p.get("buy_at") or 0) >= self.oldest:
                     net = p["buy"] * (1 - self.tax)
                     best = net if best is None or net > best else best
+        if best is None and (typical := self._typical(item, config.CITIES, max)):
+            best = typical * (1 - self.tax - config.SETUP_FEE)
         return best
 
     def daily_volume(self, item):
+        """Most sold a day in any market over the last week, else over the fair-price window."""
         vols = [h["vol"] for h in self.volumes.get(item, {}).values()]
+        vols = vols or [v["vol"] for c, v in self.fair.get(item, {}).items() if c and v.get("vol")]
         return max(vols) if vols else None
+
+    def any_estimated(self, *items):
+        return any(i in self.estimated for i in items)
 
 
 def return_rate(recipe, focus, daily_bonus=0.0):
@@ -88,6 +109,7 @@ def craft_use(recipe, market, reduction=0.0, station_fee=config.STATION_FEE):
         "profit_with": with_focus, "profit_without": without,
         # crafts a day before we'd flood the market: a share of daily volume, in whole crafts
         "daily_cap": int(volume * config.VOLUME_CAPTURE / recipe["amount"]) if volume else None,
+        "est": market.any_estimated(recipe["id"], *asks),
     }
 
 
@@ -106,7 +128,8 @@ def farm_uses(market, premium=True):
             out.append({"kind": "Water", "id": plant["id"], "name": plant["name"], "tier": plant["tier"],
                         "enchant": 0, "group": plant["kind"], "where": "island farm",
                         "focus": plant["focus_cost"], "gain": gain, "per_focus": gain / plant["focus_cost"],
-                        "profit_with": watered["profit"], "profit_without": dry["profit"], "daily_cap": None})
+                        "profit_with": watered["profit"], "profit_without": dry["profit"], "daily_cap": None,
+                        "est": market.any_estimated(*farming.plant_items(plant))})
     for animal in cat["animals"]:
         fed = farming.animal_result(animal, sell, buy, cat["foods"], animal["feedings"])
         plain = farming.animal_result(animal, sell, buy, cat["foods"], 0)
@@ -121,7 +144,7 @@ def farm_uses(market, premium=True):
                         "enchant": 0, "group": "Animal", "where": "island pasture",
                         "focus": fed["focus"] / days, "gain": gain / days, "per_focus": gain / fed["focus"],
                         "profit_with": fed["profit"], "profit_without": plain["profit"], "daily_cap": None,
-                        "days": days})
+                        "days": days, "est": market.any_estimated(*farming.animal_items(animal, fed))})
     return out
 
 
@@ -135,11 +158,14 @@ def rank(market, reduction=0.0, station_fee=config.STATION_FEE, premium=True):
 def plan(uses, daily_focus, farm_slots=0, pasture_slots=0):
     """Greedy: spend the day's focus on the best uses first. Each use is capped by what the
     market can absorb (crafts: a share of daily volume) or by your free island slots
-    (crops/herbs on farm plots, animals on pastures). Crafts with unknown volume are skipped."""
+    (crops/herbs on farm plots, animals on pastures). Crafts with unknown volume are skipped, and
+    so are uses priced from estimates (typical prices): a plan to act on needs live prices."""
     left = daily_focus
     free = {"Water": farm_slots, "Breed": pasture_slots}
     steps = []
     for u in uses:
+        if u.get("est"):
+            continue
         cap = free[u["kind"]] if u["kind"] in free else (u["daily_cap"] or 0)
         times = min(cap, int(left // u["focus"])) if u["focus"] > 0 else 0
         if times <= 0:

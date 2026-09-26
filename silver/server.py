@@ -208,7 +208,7 @@ def laborers_payload(refresh):
     loot_ids = sorted({i for job in cat["jobs"] for i, _, _ in job["loot"]})
     return {"fetched_at": int(snap["prices_at"]), "warning": snap["warning"], **cat,
             "names": {i: names.get(i, i) for i in loot_ids},
-            "prices": snap["prices"], "volumes": snap["volumes"]}
+            "prices": snap["prices"], "volumes": snap["volumes"], "fair": fair_by_item(ids)}
 
 
 def number(query, name, default, lo, hi):
@@ -224,6 +224,13 @@ def flag(query, name, default):
     return query.get(name, ["1" if default else "0"])[0] == "1"
 
 
+def fair_by_item(ids):
+    """{item: {city or "" (all cities pooled): {price, vol}}} at Normal quality: what each item
+    typically trades at. Pages and the planners fall back to it, marked ~, where nothing is live."""
+    return {i: {c: {"price": v["price"], "vol": v["vol"]} for c, v in q.get(1, {}).items()}
+            for i, q in store.fair(sorted(ids)).items()}
+
+
 def focus_payload(query):
     """Rank every focus use and plan the day, from the stored market data."""
     state = focus_job.state()
@@ -236,7 +243,7 @@ def focus_payload(query):
         volumes.setdefault(item_id, {})[city] = v
     premium = flag(query, "premium", config.PREMIUM)
     market = focus.Market(by_item_city(store.prices(ids, [1], config.MARKETS)), volumes, premium=premium,
-                          max_age_hours=number(query, "max_age", 6, 1, 72))
+                          max_age_hours=number(query, "max_age", 6, 1, 72), fair=fair_by_item(ids))
     uses = focus.rank(market, reduction=number(query, "reduction", 0, 0, 95) / 100,
                       station_fee=number(query, "station_fee", config.STATION_FEE, 0, 10000), premium=premium)
     day = focus.plan(uses, daily_focus=number(query, "daily", 10000, 0, 1_000_000),
@@ -253,17 +260,17 @@ def farming_payload(query, refresh):
     premium = flag(query, "premium", config.PREMIUM)
     water = flag(query, "water", True)
     market = focus.Market(snap["prices"], snap["volumes"], premium=premium,
-                          max_age_hours=number(query, "max_age", 6, 1, 72))
+                          max_age_hours=number(query, "max_age", 6, 1, 72), fair=fair_by_item(ids))
     cat = farming.catalog()
     plants = []
     for p in cat["plants"]:
         r = farming.plant_result(p, market.sale, market.ask, premium, water)
-        plants.append({**p, "result": r})
+        plants.append({**p, "result": r and {**r, "est": market.any_estimated(*farming.plant_items(p))}})
     animals = []
     for a in cat["animals"]:
         focused = a["feedings"] if flag(query, "feed_focus", True) else 0
         r = farming.animal_result(a, market.sale, market.ask, cat["foods"], focused)
-        animals.append({**a, "result": r})
+        animals.append({**a, "result": r and {**r, "est": market.any_estimated(*farming.animal_items(a, r))}})
     return {"fetched_at": int(snap["prices_at"]), "warning": snap["warning"],
             "plants": plants, "animals": animals}
 
@@ -344,10 +351,7 @@ def craft_payload(section, group, refresh, query=None):
     snap = snapshots.get(f"craft:{section}:{group}:{planning}", sorted(set(products) | set(tree)),
                          products, config.MARKETS, refresh)
     names = items.names()
-    # Fair (typical traded) prices, Normal quality, per city and pooled (""): the page falls back
-    # to them, marked as estimates, where no fresh listing or buy order exists.
-    fair = {i: {c: v["price"] for c, v in q.get(1, {}).items()}
-            for i, q in store.fair(sorted(set(products) | set(tree))).items()}
+    fair = fair_by_item(set(products) | set(tree))  # the page falls back to these, marked ~
     out = {"fetched_at": int(snap["prices_at"]), "warning": snap["warning"], "recipes": chosen, "prices": snap["prices"],
            "volumes": snap["volumes"], "fair": fair, "names": {i: names.get(i, i) for i in tree}}
     if planning:
