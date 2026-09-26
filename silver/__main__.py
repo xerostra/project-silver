@@ -151,6 +151,7 @@ def cmd_shortcut(args):
     subprocess.run(["powershell", "-NoProfile", "-Command",
                     f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{quote(link)}'); "
                     f"$s.TargetPath = '{quote(exe)}'; $s.WorkingDirectory = '{quote(Path.home())}'; "
+                    f"$s.IconLocation = '{quote(Path(__file__).with_name('web') / 'app.ico')},0'; "
                     "$s.Description = 'Project Silver'; $s.Save()"], check=True)
     print(f"Added {link.stem} to the Start menu.")
 

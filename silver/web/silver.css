@@ -87,7 +87,7 @@ header {
   padding: var(--sp-3) var(--sp-5); background: var(--panel); border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: var(--z-sticky);
 }
-.brand { font-weight: var(--fw-bold); font-size: var(--fs-lg); letter-spacing: .2px; }
+.brand { display: flex; align-items: center; gap: var(--sp-2); font-weight: var(--fw-bold); font-size: var(--fs-lg); letter-spacing: .2px; }
 .brand span { color: var(--accent); }
 .server { font-size: var(--fs-xs); color: var(--muted); border: 1px solid var(--line); padding: 2px var(--sp-2); border-radius: var(--radius-pill); }
 .settings { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-left: auto; font-size: var(--fs-md); color: var(--muted); }

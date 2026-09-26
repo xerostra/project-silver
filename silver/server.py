@@ -50,6 +50,11 @@ HTML, CSS = "text/html; charset=utf-8", "text/css; charset=utf-8"
 PAGES = {  # URL path -> (file in WEB_DIR, content type)
     "/": ("index.html", HTML), "/index.html": ("index.html", HTML),
     "/kit": ("kit.html", HTML), "/silver.css": ("silver.css", CSS),
+    # the app icon: tab and window (SVG), Windows (ICO), installed-app/taskbar (manifest + PNGs)
+    "/app.svg": ("app.svg", "image/svg+xml"), "/app.ico": ("app.ico", "image/x-icon"),
+    "/favicon.ico": ("app.ico", "image/x-icon"),
+    "/app-192.png": ("app-192.png", "image/png"), "/app-512.png": ("app-512.png", "image/png"),
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
 }
 PRICE_TTL = 60          # seconds before prices are re-fetched
 VOLUME_TTL = 30 * 60    # daily history changes slowly
