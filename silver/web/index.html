@@ -280,6 +280,7 @@
       <div class="chips" id="cTierChips"></div>
       <div class="chips" id="cEnchantChips"></div>
       <label title="Refine or craft an ingredient yourself (and its ingredients, all the way down) wherever that is cheaper than buying it"><input type="checkbox" id="cMake"> Make ingredients when cheaper</label>
+      <label title="Where nothing is listed right now, use what the item typically trades at (its fair price), marked ~"><input type="checkbox" id="cFair" checked> Fill gaps with typical prices</label>
       <label><input type="checkbox" id="cComplete" checked> Only fully priced</label>
       <label><input type="search" id="cSearch" placeholder="Search item…"></label>
       <span class="meta" id="cMeta"></span>
@@ -993,7 +994,7 @@ const C = {
   tiers: new Set(store.get("c.tiers", [])), enchants: new Set(store.get("c.enchants", [])),
   sort: validSort(store.get("c.sort", { key: "profit", dir: -1 }), "profit"),
 };
-const CRAFT_PREFS = ["cFocus", "cDaily", "cFee", "cMatSrc", "cMatMode", "cSellMode", "cSellAt", "cComplete", "cMake"];
+const CRAFT_PREFS = ["cFocus", "cDaily", "cFee", "cMatSrc", "cMatMode", "cSellMode", "cSellAt", "cFair", "cComplete", "cMake"];
 // Settings the server's make-or-buy plans depend on: changing one refetches them.
 const PLAN_PREFS = new Set(["cFocus", "cDaily", "cFee", "cMatSrc", "cMatMode", "cMake"]);
 
@@ -1016,7 +1017,17 @@ function materialPrice(id) {
       : (x.buy && fresh(x.buy_at) ? buyCost(x.buy, true) : null);
     if (price && (!best || price < best.price)) best = { price, city: c };
   }
-  return best;
+  return best || typicalPrice(id, cities, (a, b) => a < b);
+}
+
+// Fallback where nothing fresh is listed: the fair (typical traded) price, cheapest or dearest
+// of the given cities as `better` says, else pooled across cities. Marked est so the page shows ~.
+function typicalPrice(id, cities, better) {
+  if (!$("cFair").checked) return null;
+  const f = CRAFT.fair?.[id] || {};
+  let best = null;
+  for (const c of cities) if (f[c] && (!best || better(f[c], best.price))) best = { price: f[c], city: c, est: true };
+  return best || (f[""] ? { price: f[""], city: null, est: true } : null);
 }
 
 // Best net silver for one unit of the product after fees: {net, gross, city} or null.
@@ -1033,19 +1044,35 @@ function productSale(id) {
     const net = gross && sellNet(gross, order);
     if (net && (!best || net > best.net)) best = { net, gross, city: c, vol: v[c]?.vol };
   }
-  return best;
+  if (best) return best;
+  const t = typicalPrice(id, markets.filter((c) => !order || c !== "Black Market"), (a, b) => a > b);
+  return t && { net: sellNet(t.price, order), gross: t.price, city: t.city || "typical", vol: v[t.city]?.vol, est: true };
+}
+
+// One line per ingredient: icon, how many, the city to buy it in (or make it) and the price there.
+// A city other than the craft city means a trip, so it stands out.
+function materials(parts) {
+  return `<div class="mats">${parts.map((p) => {
+    const n = Number.isInteger(p.n) ? p.n : p.n.toFixed(2);
+    const where = p.city ? `<span class="${p.city === C.city ? "here" : "away"}">${p.make ? "make in " : ""}${esc(p.city)}</span>`
+      : p.price ? '<span class="none">any city</span>' : '<span class="none">no price</span>';
+    const price = p.price ? `<span class="num price${p.est ? " est" : ""}" ${p.est ? 'title="Nothing listed now: its typical traded price"' : ""}>${p.est ? "~" : ""}${fmt(p.price)}</span>` : "";
+    return `<span class="mat" title="${esc(p.name)}">${iconImg(p.id)}<span class="num">${n}×</span>${where}${price}</span>`;
+  }).join("")}</div>`;
 }
 
 function craftRow(r) {
   const rate = r.upgrade ? 0 : returnRate(r, C.city);  // enchanting returns nothing
-  let mats = 0; const missing = [], lines = [];
+  let mats = 0; const missing = [], lines = [], parts = [], estimated = [];
   for (const [id, n, returned] of r.inputs) {
     const m = materialPrice(id);
     const name = CRAFT.names[id] || id;
-    if (!m) { missing.push(name); lines.push(`${n} × ${name}: no fresh price`); continue; }
+    parts.push({ id, name, n, price: m?.price, city: m?.city, est: m?.est });
+    if (!m) { missing.push(name); lines.push(`${n} × ${name}: no price, fresh or typical`); continue; }
     const eff = n * m.price * (returned ? 1 - rate : 1);
     mats += eff;
-    lines.push(`${n} × ${name} @ ${fmt(m.price)} (${m.city})${returned ? "" : " – not returned"} = ${fmt(eff)}`);
+    if (m.est) estimated.push(name);
+    lines.push(`${n} × ${name} @ ${m.est ? "~" : ""}${fmt(m.price)} (${m.est ? `typical${m.city ? " in " + m.city : ""}` : m.city})${returned ? "" : " – not returned"} = ${fmt(eff)}`);
   }
   const fee = r.upgrade ? 0 : r.value * CB.bonus.nutrition_per_value * (+$("cFee").value || 0) / 100;
   const bought = missing.length ? null : (mats + fee + r.silver) / r.amount;
@@ -1058,13 +1085,18 @@ function craftRow(r) {
     lines.push(`Cheapest way, per unit made: ${fmt(plan.cost)}${bought ? ` (buying every ingredient: ${fmt(bought)})` : ""}`);
     for (const m of plan.makes) lines.push(`Make ${m.units.toFixed(2)} × ${nm(m.id)} in ${m.city} (${pct1(m.rate)} returned)`);
     for (const b of plan.buys) lines.push(`Buy ${b.units.toFixed(2)} × ${nm(b.id)} @ ${fmt(b.price)} in ${b.where}`);
+    parts.length = 0;
+    for (const m of plan.makes) parts.push({ id: m.id, name: nm(m.id), n: m.units, city: m.city, make: true });
+    for (const b of plan.buys) parts.push({ id: b.id, name: nm(b.id), n: b.units, price: b.price, city: b.where });
   }
   const cost = plan ? plan.cost : bought;
   const sale = productSale(r.id);
+  if (sale?.est) estimated.push("the sale price");
+  if (!plan && estimated.length) lines.unshift(`Estimated: no fresh price for ${estimated.join(", ")}, so their typical traded price is used`);
   const profit = sale && cost != null ? sale.net - cost : null;
   const focusPerUnit = plan ? plan.focus : r.focus / r.amount;
   return {
-    r, rate, cost, sale, profit, missing: cost == null ? missing : [], tip: lines.join("\n"),
+    r, rate, cost, sale, profit, parts, est: !plan && estimated.length > 0, missing: cost == null ? missing : [], tip: lines.join("\n"),
     saved: plan && bought ? 1 - plan.cost / bought : null, made: plan ? plan.makes.length : 0,
     roi: profit != null ? profit / cost : null,
     perFocus: profit != null && $("cFocus").checked && focusPerUnit ? profit / focusPerUnit : null,
@@ -1073,6 +1105,7 @@ function craftRow(r) {
 
 const CCOLS = [
   { key: "item", label: "Item", left: true },
+  { key: "mats", label: "Materials: where to buy", left: true },
   { key: "rate", label: "Return", sort: (x) => x.rate },
   { key: "cost", label: "Cost / unit", sort: (x) => x.cost },
   { key: "sell", label: "Sells for", sort: (x) => x.sale?.net ?? -1 },
@@ -1110,13 +1143,14 @@ function renderCraft() {
   const body = rows.map((x) => {
     const { r, sale } = x;
     const profit = x.profit == null ? `<span class="none">${x.missing.length ? "missing prices" : "no buyer"}</span>`
-      : `<span class="${x.profit >= 0 ? "profit" : "loss"}">${x.profit >= 0 ? "+" : ""}${fmt(x.profit)}</span>`;
+      : `<span class="${x.profit >= 0 ? "profit" : "loss"}${x.est ? " est" : ""}">${x.est ? "~" : ""}${x.profit >= 0 ? "+" : ""}${fmt(x.profit)}</span>`;
     return `<tr title="${esc(x.tip)}">
       <td class="left"><div class="item">${iconImg(r.icon || r.id)}
         <span class="tier">${r.tier}.${r.enchant}</span><span class="name">${esc(r.name)}</span></div></td>
+      <td class="left">${materials(x.parts)}</td>
       <td class="num">${r.upgrade ? '<span class="none">n/a</span>' : pct1(x.rate)}</td>
       <td class="num">${x.cost == null ? '<span class="none">–</span>' : fmt(x.cost)}${x.saved > 0.001 ? `<br><span class="sub">${x.made} made · saves ${pct(x.saved)}</span>` : ""}</td>
-      <td class="num">${sale ? `${fmt(sale.gross)} <span class="q">${esc(sale.city)}</span>` : '<span class="none">–</span>'}</td>
+      <td class="num">${sale ? `<span class="${sale.est ? "est" : ""}">${sale.est ? "~" : ""}${fmt(sale.gross)}</span> <span class="q">${esc(sale.city)}</span>` : '<span class="none">–</span>'}</td>
       <td class="num">${profit}</td>
       <td class="num">${x.roi != null ? pct(x.roi) : "–"}</td>
       <td class="num">${sale?.vol ? short(sale.vol) : '<span class="none">?</span>'}</td>
@@ -1126,7 +1160,10 @@ function renderCraft() {
     </tr>`;
   }).join("");
   $("craftTable").innerHTML = head + `<tbody>${body || `<tr><td class="left none" colspan="99">Nothing to show. Try a longer max price age, "cheapest city" for materials, or turn off "Only fully priced".</td></tr>`}</tbody>`;
-  $("cMeta").innerHTML = `${rows.length} recipes · prices ${new Date(CRAFT.fetched_at * 1000).toLocaleTimeString()}${warn(CRAFT.warning)}`;
+  const estimated = rows.filter((x) => x.est).length;
+  $("cMeta").innerHTML = `${rows.length} recipes · prices ${new Date(CRAFT.fetched_at * 1000).toLocaleTimeString()}`
+    + (estimated ? ` · <span class="est" title="Nothing is listed right now for some of their materials or products, so the price they typically trade at is used. Check the market in game before buying.">${estimated} use typical prices (~)</span>` : "")
+    + warn(CRAFT.warning);
 }
 
 bindSort($("craftTable"), CCOLS, C, "c.sort", renderCraft);
@@ -1174,7 +1211,7 @@ async function initCraft() {
   $("cGroup").value = C.section + "|" + C.group;
   $("cCity").innerHTML = CFG.cities.map((c) => `<option>${esc(c)}</option>`).join("");
   $("cCity").value = C.city;
-  const defaults = { cFocus: false, cDaily: "0", cFee: CFG.station_fee, cMatSrc: "cheapest", cMatMode: "ask", cSellMode: "instant", cSellAt: "best", cComplete: true };
+  const defaults = { cFocus: false, cDaily: "0", cFee: CFG.station_fee, cMatSrc: "cheapest", cMatMode: "ask", cSellMode: "instant", cSellAt: "best", cFair: true, cComplete: true };
   for (const id of CRAFT_PREFS) {
     const v = store.get("c." + id, defaults[id]);
     if ($(id).type === "checkbox") $(id).checked = v;

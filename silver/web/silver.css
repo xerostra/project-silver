@@ -189,6 +189,14 @@ img.icon.failed { visibility: hidden; }
 .picked .sub { color: var(--muted); font-size: var(--fs-sm); }
 .picked .chips { margin-top: 6px; }
 
+/* Materials list: one ingredient a line (icon, count, where, price); a trip elsewhere stands out */
+.mats { display: flex; flex-direction: column; gap: 2px; }
+.mat { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--muted); }
+.mat img { width: 20px; height: 20px; flex: none; }
+.mat .here { color: var(--text); }
+.mat .away { color: var(--accent); font-weight: var(--fw-strong); }
+.mat .price { margin-left: auto; padding-left: var(--sp-2); }
+
 /* Market price cell: ask on top, bid below, with freshness */
 .cell { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .p { padding: 0 var(--sp-1); border-radius: var(--radius-sm); }
@@ -289,5 +297,6 @@ body.overlay { padding: var(--sp-3); font-size: var(--fs-md); }
 .search-wide { width: min(420px, 100%); }
 .gap-left { margin-left: var(--sp-3); }
 .space-above { margin-top: var(--sp-3); }
+.est { font-style: italic; opacity: .8; }  /* an estimate (typical price), not a live one; shown with ~ */
 .hidden { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

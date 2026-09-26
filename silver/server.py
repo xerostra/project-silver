@@ -344,8 +344,12 @@ def craft_payload(section, group, refresh, query=None):
     snap = snapshots.get(f"craft:{section}:{group}:{planning}", sorted(set(products) | set(tree)),
                          products, config.MARKETS, refresh)
     names = items.names()
+    # Fair (typical traded) prices, Normal quality, per city and pooled (""): the page falls back
+    # to them, marked as estimates, where no fresh listing or buy order exists.
+    fair = {i: {c: v["price"] for c, v in q.get(1, {}).items()}
+            for i, q in store.fair(sorted(set(products) | set(tree))).items()}
     out = {"fetched_at": int(snap["prices_at"]), "warning": snap["warning"], "recipes": chosen, "prices": snap["prices"],
-           "volumes": snap["volumes"], "names": {i: names.get(i, i) for i in tree}}
+           "volumes": snap["volumes"], "fair": fair, "names": {i: names.get(i, i) for i in tree}}
     if planning:
         city = query.get("city", [""])[0]
         city = city if city in config.CITIES else config.CITIES[0]
