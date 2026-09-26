@@ -10,9 +10,8 @@ dependencies = ["requests>=2.28"]
 silver = "silver.__main__:main"
 
 [project.optional-dependencies]
-eye = [
+eye = [  # OpenCV comes with rapidocr (opencv-python): a second OpenCV build would install cv2 twice
     "numpy>=2.2.6",
-    "opencv-python-headless>=5.0.0.93",
     "rapidocr-onnxruntime>=1.4.4",
 ]
 
