@@ -1,0 +1,17 @@
+# docker compose up -d   ->   http://localhost:8765
+services:
+  silver:
+    build: .
+    image: project-silver
+    restart: unless-stopped
+    environment:
+      SILVER_SERVER: asia  # your game server: asia, americas or europe
+    ports:
+      # Only this machine can open the dashboard. To reach it from your LAN, use "8765:8765",
+      # but read "Exposing it" in README.md first: the dashboard has no login.
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - silver-data:/data
+
+volumes:
+  silver-data:

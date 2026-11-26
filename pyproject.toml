@@ -1,10 +1,18 @@
 [project]
 name = "project-silver"
 version = "0.1.0"
-description = "Albion Online market data platform and dashboard"
+description = "Self-hosted Albion Online market, crafting and PvP dashboard"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Xerostra" }]
+keywords = ["albion-online", "market", "crafting", "flipping", "dashboard"]
 requires-python = ">=3.10"
 dependencies = ["requests>=2.28"]
+
+[project.urls]
+Homepage = "https://github.com/xerostra/project-silver"
+Issues = "https://github.com/xerostra/project-silver/issues"
 
 [project.scripts]
 silver = "silver.__main__:main"
