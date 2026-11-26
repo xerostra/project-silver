@@ -1,4 +1,5 @@
 """Unit tests for the pure logic. Run: python3 -m unittest discover tests"""
+import datetime
 import random
 import re
 import tempfile
@@ -837,7 +838,9 @@ class Collecting(unittest.TestCase):
     def test_rebuild_from_the_archive_matches_live_collection(self):
         self.collector(FakeFeed(range(1, 4))).poll()
         live = self.kills.summary()
-        self.assertEqual(self.kills.rebuild(killboard.Archive(self.dir / "raw")), 3)
+        kill_day = datetime.datetime(2026, 9, 24, 12, tzinfo=datetime.timezone.utc).timestamp()
+        with mock.patch("time.time", return_value=kill_day):  # rebuild prunes by today's date
+            self.assertEqual(self.kills.rebuild(killboard.Archive(self.dir / "raw")), 3)
         self.assertEqual(self.kills.summary(), live)
 
     def test_poll_errors_are_recorded_not_raised(self):
