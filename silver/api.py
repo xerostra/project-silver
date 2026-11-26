@@ -103,7 +103,7 @@ def parse_price_row(r):
 
 class JSONClient:
     """GET JSON with retries on network errors, 429/5xx and unparseable bodies."""
-    user_agent = "project-silver (personal market tool)"
+    user_agent = "project-silver (+https://github.com/xerostra/project-silver)"
 
     def __init__(self, host, limiter=None):
         self.host = host.rstrip("/")

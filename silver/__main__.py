@@ -1,5 +1,5 @@
 """silver                          -> the dashboard in its own window (starts it if it isn't running)
-silver shortcut                 -> add Silver to the Windows Start menu
+silver shortcut                 -> add Silver to the Windows Start menu (for the --server given)
 python -m silver serve          -> dashboard at http://localhost:8765 (collects too, unless
                                     another process already is)
 python -m silver collect        -> collection only, for running 24/7 under a supervisor
@@ -150,7 +150,7 @@ def cmd_shortcut(args):
     quote = lambda p: str(p).replace("'", "''")
     subprocess.run(["powershell", "-NoProfile", "-Command",
                     f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{quote(link)}'); "
-                    f"$s.TargetPath = '{quote(exe)}'; $s.WorkingDirectory = '{quote(Path.home())}'; "
+                    f"$s.TargetPath = '{quote(exe)}'; $s.Arguments = '--server {config.SERVER}'; $s.WorkingDirectory = '{quote(Path.home())}'; "
                     f"$s.IconLocation = '{quote(Path(__file__).with_name('web') / 'app.ico')},0'; "
                     "$s.Description = 'Project Silver'; $s.Save()"], check=True)
     print(f"Added {link.stem} to the Start menu.")
@@ -206,8 +206,11 @@ def cmd_eye(args):
 
 def main():
     parser = argparse.ArgumentParser(prog="silver", description="Albion Online market and PvP tools")
-    parser.add_argument("--server", choices=sorted(config.SERVERS), default=config.SERVER,
-                        help="game server (default: %(default)s)")
+    server = os.environ.get("SILVER_SERVER") or config.SERVER
+    if server not in config.SERVERS:
+        raise SystemExit(f"SILVER_SERVER={server!r}: use one of {', '.join(sorted(config.SERVERS))}")
+    parser.add_argument("--server", choices=sorted(config.SERVERS), default=server,
+                        help="game server (default: %(default)s, or set SILVER_SERVER)")
     sub = parser.add_subparsers(dest="cmd")  # none: the app
 
     p = sub.add_parser("app", help="the dashboard in its own window, started if needed (the default)")
