@@ -8,6 +8,8 @@ You run it yourself, on your own PC or an always-on box. There's no account, no 
 service: it reads the public [Albion Online Data Project](https://www.albion-online-data.com/) and
 the official game API, and keeps everything on your own machine.
 
+![The Flips tab: every profitable trade route across the markets](docs/screenshots/flips.png)
+
 > **Is it safe for my account?** Silver never touches the game. It doesn't read the game's
 > memory, files or network traffic, and it never sends a key press or click. Market data comes
 > from public APIs. The optional [screen reader](#the-eye-optional) only looks at pixels, like a
@@ -30,6 +32,12 @@ the official game API, and keeps everything on your own machine.
 | **Gold** | Gold price over the last month, plus a converter. |
 | **Killboard / Players / Meta** | Live kills, player and guild lookups, and which weapons and builds are winning, by fight size. |
 | **Session** | Track a play session's profit and goals, with an always-on-top overlay. |
+
+| Market | Craft & Refine |
+|---|---|
+| ![Market tab: fair prices, trends and volume for every item](docs/screenshots/market.png) | ![Craft & Refine tab: recipe profit, where to buy each material and where to sell](docs/screenshots/craft.png) |
+| **Lookup** | **Meta** |
+| ![Lookup tab: one item in every market, with its price history](docs/screenshots/lookup.png) | ![Meta tab: which weapons win, from collected kills](docs/screenshots/meta.png) |
 
 ## Get started
 
